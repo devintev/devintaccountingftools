@@ -1,5 +1,18 @@
 import azure.functions as func
 import logging
+from json2html import json2html
+import traceback
+import sys
+import json
+from datetime import datetime
+
+
+from hrmlib.hrmtools import (
+    SecretsAndSettingsManager, HTMLListHandler,
+    read_html_page_template,
+    extract_data_from_received_http_request,
+    replace_and_format_html_template
+)
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 

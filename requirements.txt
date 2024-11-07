@@ -3,3 +3,20 @@
 # Manually managing azure-functions-worker may cause unexpected issues
 
 azure-functions
+azure-identity
+azure-mgmt-web
+azure-keyvault-secrets
+azure-storage-blob
+azure-storage-queue
+azure-cosmos
+
+requests
+mysql-connector-python
+pandas
+sendgrid
+openpyxl
+pymsteams
+bs4
+json2html
+text2num
+pydantic
