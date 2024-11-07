@@ -21,6 +21,6 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(f"Hello, {name}. This HTTP triggered function executed successfully.")
     else:
         return func.HttpResponse(
-            "Its finally working. Pass a name in the query string or in the request body for a personalized response.",
+            "Its finally finally working. Pass a name in the query string or in the request body for a personalized response.",
             status_code=200
         )
