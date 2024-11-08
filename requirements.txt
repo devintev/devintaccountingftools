@@ -10,13 +10,14 @@ azure-storage-blob
 azure-storage-queue
 azure-cosmos
 
-requests
-mysql-connector-python
-pandas
 sendgrid
 openpyxl
+pandas
 pymsteams
-bs4
+requests
 json2html
-text2num
-pydantic
+pytz
+
+# mysql-connector-python
+# text2num
+# pydantic
