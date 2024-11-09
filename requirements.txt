@@ -18,6 +18,7 @@ requests
 json2html
 pytz
 bs4
+pyyaml
 
 # mysql-connector-python
 # text2num

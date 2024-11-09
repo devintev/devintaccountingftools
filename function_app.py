@@ -13,7 +13,8 @@ from hrmlib.hrmtools import (
     SecretsAndSettingsManager, HTMLListHandler,
     read_html_page_template,
     extract_data_from_received_http_request,
-    replace_and_format_html_template
+    replace_and_format_html_template,
+    DevIntConnector
 )
 # az login --service-principal -u "03d6bd37-4f1d-4c3f-8e42-fbb00a18613c" -p "25c673f4-42a5-43c5-9d6f-f84222b09f19" --tenant "052225af-3db0-4ee8-88d8-27c19a3afed1"
 
@@ -44,30 +45,27 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
         f'Python HTTP trigger received a request and started running with python version: {str(sys.version)}.')
 
     logger.info(
-        'Python HTTP triggered ????? function starts processing a request.')
+        'Python HTTP triggered test function starts processing a request.')
 
-    # dc = common.DevIntConnector()
-    # dc.setup()
-    # data = dc.analyse_received_http_request(req)
-
-    # http_vars = extract_data_from_received_http_request(
-    #     http_request=req, parent_logger=logger)
-    # logger.debug(f"http_vars: {json2html.convert(json = http_vars)}")
     http_vars = extract_data_from_received_http_request(
         http_request=req, parent_logger=logger)
+    logger.debug(f"http_vars: {json2html.convert(json = http_vars)}")
+
     replace_data = {
         "help_info": "",
-        "reportbuilder_form": "",
         "messages": "",
         "main_content": f"<h1>Called Function</h1>",
-        "report_content": "",
-        "db_statistics_html": "",
         "log_level_num": "info",
     }
-
+    dc = DevIntConnector(parent_logger=logger,
+                         settings_file="hrmlib/devint_settings.yaml")
     config = SecretsAndSettingsManager(parent_logger=logger)
+    # dc.set_key_vault_access()
+    dc.setup(config)
+    # data = dc.analyse_received_http_request(req)
+
     se = config.get_secret("bb-api-key")
-    logger.debug(f"Secret: {se[:4]}")
+    function_app_url = config.get_function_app_url()
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     #

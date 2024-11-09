@@ -1,4 +1,6 @@
 import logging
+import yaml
+import os
 import datetime
 from azure.keyvault.secrets import SecretClient
 from azure.functions import HttpRequest
@@ -7,8 +9,19 @@ from bs4 import BeautifulSoup
 from os import getenv
 from typing import List
 from azure.mgmt.web import WebSiteManagementClient
+from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.cosmos import CosmosClient
+import azure.cosmos.exceptions as cdbexceptions
 
-# last updated 2024-02-27
+# last updated 2024-10-09
+from sendgrid import SendGridAPIClient
+# from sendgrid.helpers.mail import (Mail, Attachment, FileContent, FileName, FileType, Disposition, ContentId)
+# from openpyxl import Workbook, workbook, styles, load_workbook
+# from openpyxl.worksheet.worksheet import Worksheet
+# from openpyxl.utils.dataframe import dataframe_to_rows
+# import pymsteams
+
+# from tempfile import NamedTemporaryFile
 
 
 class SecretsAndSettingsManager:
@@ -77,7 +90,6 @@ class SecretsAndSettingsManager:
         Returns:
         str: The value of the secret. If the secret could not be retrieved, returns None.
         """
-        secret_value = "?"
 
         if self.key_vault_client is not None:
             try:
@@ -385,3 +397,173 @@ def get_db_config_from_keyvault(config: SecretsAndSettingsManager, logger: loggi
         logger.error(
             "Getting database connection data from keyvault failed.")
     return db_con_data
+
+
+class DevIntConnector:
+
+    def __init__(self, parent_logger=None, settings_file='devint_settings.yaml'):
+        try:
+            if parent_logger is not None:
+                self.logger = parent_logger.getChild(__class__.__name__)
+            else:
+                self.logger = logging.getLogger(
+                    f"{__name__}.{__class__.__name__}")
+        except:
+            self.logger = logging.getLogger(__name__)
+
+        self.key_vault: SecretsAndSettingsManager | None = None
+        self.conn_clients = None
+        self.settings = self.load_settings(settings_file)
+
+    def load_settings(self, settings_file):
+        try:
+            with open(settings_file, 'r') as file:
+                settings = yaml.safe_load(file)
+                self.logger.debug(
+                    f"Successfully loaded settings from {os.path.abspath(settings_file)}.")
+                return settings
+        except FileNotFoundError:
+            self.logger.error(
+                f"Settings file '{settings_file}' not found. Python tried to find it in directory: {os.path.abspath(settings_file)}.")
+        except yaml.YAMLError as e:
+            self.logger.error(
+                f"Error parsing YAML file '{settings_file}': {str(e)}")
+        except Exception as e:
+            self.logger.error(
+                f"An unexpected error occurred while loading settings from '{settings_file}': {str(e)}")
+        return {}
+
+    def get_settings(self):
+        return self.settings
+
+    def set_key_vault_access(self, config: SecretsAndSettingsManager):
+        self.key_vault = config
+
+    def setup(self, config: SecretsAndSettingsManager | None = None):
+        if config:
+            self.set_key_vault_access(config)
+        if self.key_vault:
+            self.conn_clients = self.build_clients()
+
+    def build_clients(self):
+        # Load settings
+        settings = self.settings
+
+        # Azure Blob Storage Information and Client
+        blob_storage_account_name = settings.get(
+            'azure_blob_storage_account_name')
+        abs_acct_url = f"https://{blob_storage_account_name}.blob.core.windows.net/"
+        try:
+            blob_service_client = BlobServiceClient(
+                abs_acct_url, credential=self.key_vault.credential)
+            self.logger.debug(
+                f"Successfully created BlobServiceClient for account: {blob_storage_account_name}.")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create BlobServiceClient for account: {blob_storage_account_name}. Error: {str(e)}")
+            return None
+
+        # Blob Container Names
+        templates_container_name = settings['blob_containers']['templates']
+        financialplanning_container_name = settings['blob_containers']['financialplanning']
+        financial_reports_container_name = settings['blob_containers']['financial_reports']
+        working_time_reports_container_name = settings['blob_containers']['working_time_reports']
+        wcc_invoicing_container_name = settings['blob_containers']['wcc_invoicing']
+        od_invoicing_container_name = settings['blob_containers']['od_invoicing']
+
+        # Buchhaltungsbuttler API Information
+        try:
+            bb_api_key = self.key_vault.get_secret(
+                settings['secrets']['bb_api_key'])
+            self.logger.debug(
+                "Successfully retrieved Buchhaltungsbuttler API key.")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to retrieve Buchhaltungsbuttler API key. Error: {str(e)}")
+            return None
+        bb_authorization = self.key_vault.get_secret(
+            settings['secrets']['bb_authorization'])
+        bb_cookie = self.key_vault.get_secret(settings['secrets']['bb_cookie'])
+
+        # Sendgrid API Information
+        sendgrid_api_key = self.key_vault.get_secret(
+            settings['secrets']['sendgrid_api_key'])
+        try:
+            sendgrid_client = SendGridAPIClient(sendgrid_api_key)
+            self.logger.debug("Successfully created SendGridAPIClient.")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create SendGridAPIClient. Error: {str(e)}")
+            return None
+
+        # Azure Cosmos DB Information and Client
+        cosmos_db_url = settings.get('cosmos_db_url')
+        db_access_key = self.key_vault.get_secret(
+            settings['secrets']['cosmos_db_key'])
+        try:
+            cosmos_client = CosmosClient(
+                url=cosmos_db_url, credential=db_access_key)
+            self.logger.debug(
+                f"Successfully created CosmosClient for URL: {cosmos_db_url}.")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create CosmosClient for URL: {cosmos_db_url}. Error: {str(e)}")
+            return None
+        db_id = settings.get('cosmos_db_id')
+
+        try:
+            try:
+                db = cosmos_client.create_database(id=db_id)
+                self.logger.debug(
+                    f"Successfully created database with id: {db_id}.")
+            except cdbexceptions.CosmosResourceExistsError:
+                db = cosmos_client.get_database_client(db_id)
+                self.logger.debug(
+                    f"Database with id: {db_id} already exists. Using existing database client.")
+            except Exception as e:
+                self.logger.error(
+                    f"Failed to create or get Cosmos DB database with id: {db_id}. Error: {str(e)}")
+                return None
+        except cdbexceptions.CosmosResourceExistsError:
+            db = cosmos_client.get_database_client(db_id)
+
+        # Teams Webhook and Report Request Backlink
+        try:
+            teams_webhook = self.key_vault.get_secret(
+                settings['secrets']['teams_webhook'])
+            self.logger.debug("Successfully retrieved Teams webhook URL.")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to retrieve Teams webhook URL. Error: {str(e)}")
+            return None
+        try:
+            reportrequest_backlink = self.key_vault.get_secret(
+                settings['secrets']['reportrequest_backlink'])
+            self.logger.debug(
+                "Successfully retrieved report request backlink.")
+        except Exception as e:
+            self.logger.error(
+                f"Failed to retrieve report request backlink. Error: {str(e)}")
+            return None
+
+        # Clients Dictionary
+        conn_clients = {
+            "blob_service": blob_service_client,
+            "templates_folder": blob_service_client.get_container_client(container=templates_container_name),
+            "financialplanning_folder": blob_service_client.get_container_client(container=financialplanning_container_name),
+            "financial_reports_folder": blob_service_client.get_container_client(container=financial_reports_container_name),
+            "working_time_reports_folder": blob_service_client.get_container_client(container=working_time_reports_container_name),
+            "wcc_invoicing_folder": blob_service_client.get_container_client(container=wcc_invoicing_container_name),
+            "od_invoicing_folder": blob_service_client.get_container_client(container=od_invoicing_container_name),
+            "key_vault": self.key_vault,
+            "cosmos": cosmos_client,
+            "sendgrid": sendgrid_client,
+            "teams_webhook": teams_webhook,
+            "reportrequest_backlink": reportrequest_backlink,
+            "bb_api_key": bb_api_key,
+            "bb_authorization": bb_authorization,
+            "bb_cookie": bb_cookie,
+            "db": db
+        }
+
+        return conn_clients
