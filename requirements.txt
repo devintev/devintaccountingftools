@@ -17,6 +17,7 @@ pymsteams
 requests
 json2html
 pytz
+bs4
 
 # mysql-connector-python
 # text2num

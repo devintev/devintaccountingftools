@@ -1,0 +1,29 @@
+<div class="statistics-container">
+  <h2>Export Database</h2>
+  <div>
+    <button onclick="copyToClipboard()">Copy to Clipboard</button>
+    <button onclick="downloadExportJson()">download json file</button>
+    <br>
+    <textarea id="jsonInput" rows="100" cols="140">{{db_json}}</textarea>
+    <script>
+      function copyToClipboard() {
+        var jsonInput = document.getElementById("jsonInput");
+        jsonInput.select();
+        document.execCommand("copy");
+        alert("Copied to clipboard!");
+      }
+      function downloadExportJson() {
+        var filename = "{{export_filename}}";
+        var jsonInput = document.getElementById("jsonInput").value;
+        var blob = new Blob([jsonInput], {type: "application/json"});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    </script>
+  </div>
+</div>
+

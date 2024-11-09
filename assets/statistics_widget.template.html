@@ -1,0 +1,28 @@
+<div class="statistics-container">
+  <h2>Database Statistics</h2>
+  <div>
+      <canvas id="myChart"></canvas>
+  </div>
+  <script>
+      const ctx = document.getElementById('myChart');
+    
+      new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: {{chart_labels}},
+          datasets: [{
+            label: {{dimension_label}},
+            data: {{chart_data}},
+            borderWidth: 1
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+  </script>
+</div>

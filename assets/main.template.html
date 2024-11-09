@@ -1,0 +1,49 @@
+<!-- <?xml version="1.0" ?> -->
+<!DOCTYPE html>
+<html lang="en">
+
+    <head>
+        
+        <meta charset="UTF-8">
+        <title>HRM Monitoring</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <!-- Latest compiled and minified CSS -->
+        <!-- <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css"> -->
+        <!-- jQuery library -->
+        <!-- <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script> -->
+        <style>
+            {{css_styles}}
+        </style>
+        <script>
+            {{js_script}}
+        </script>
+    </head>
+    <body>
+        <!-- <nav class="navbar">
+            <form action="" method="POST" id="navForm">
+                <input type="hidden" id="navInput" name="page"> 
+                <button type="button" class="nav-btn" onclick="submitForm('Statistics')">Statistics</button>
+                <button type="button" class="nav-btn" onclick="submitForm('ReportBuilder')">Report Builder</button>
+                <button type="button" class="nav-btn" onclick="submitForm('CaseFilterSearch')">Case Filter Search</button>
+                <button type="button" class="nav-btn" onclick="submitForm('ExportDB')">Export DB</button>
+                <button type="button" class="nav-btn" onclick="submitForm('OldReportBuilder')">Old RB</button>
+                <div class="log-level-container">
+                    <label for="logLevel">Log Level:</label>
+                    <input type="range" id="logLevel" name="log_level" min="0" max="4" value="{{log_level_num}}" class="log-level-slider">
+                    <span id="logLevelDisplay">error</span> 
+                </div>                
+            </form>
+        </nav> -->
+        
+        
+        <div class="container">
+            <div class="precontainer">
+                {{help_info}}
+                {{main_content}}
+            </div>
+            {{log}}
+        </div>
+
+    </body>
+</html> 

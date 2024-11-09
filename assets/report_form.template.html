@@ -1,0 +1,91 @@
+<h2>Select Report Data</h2>
+<form action='{form_action}' method='post'>
+    <input type="hidden" id="navInput2" name="page" value="{{page_name}}">
+    <input type="hidden" id="logLevel2" name="log_level" value="{{log_level_num}}">
+    <table>
+        <tr>
+            <td><label for="case_tag_selections">Select Case Groups</label></td>
+            <td>
+                <select name="case_tag_selections" id="case_tag_selections" style="min-width: 150px; width: auto;" multiple>
+                    {case_tag_selections_html}
+                  </select>           
+            </td>
+        </tr>
+        <tr>
+            <td>Report Title</td>
+            <td><input type="text" name="report_title" value="{report_title}" size="71" placeholder='Add a Report name'/></td>
+        </tr>
+        <tr>
+            <td>Report Subtitle</td>
+            <td><input type="text" name="report_subtitle" value="{report_subtitle}" size="71" placeholder='Add a subtitle for the report name'/></td>
+        </tr>
+        <tr>
+            <td>1. Time Window</td>
+            <td>
+                <input type="text" name="tw_title_1" value="{tw_title_1}" placeholder='title'/>
+                <input type="text" name="tw_start_1" value="{tw_start_1}" size="10" placeholder='01.10.2022'/>
+                <input type="text" name="tw_end_1" value="{tw_end_1}" size="10" placeholder='31.12.2022'/>
+            </td>
+        </tr>
+        <tr>
+            <td>2. Time Window</td>
+            <td>
+                <input type="text" name="tw_title_2" value="{tw_title_2}" placeholder='title'/>
+                <input type="text" name="tw_start_2" value="{tw_start_2}" size="10" placeholder='01.01.2023'/>
+                <input type="text" name="tw_end_2" value="{tw_end_2}" size="10" placeholder='31.3.2023'/>
+            </td>
+        </tr>
+        <tr>
+            <td>3. Time Window</td>
+            <td>
+                <input type="text" name="tw_title_3" value="{tw_title_3}" placeholder='title'/>
+                <input type="text" name="tw_start_3" value="{tw_start_3}" size="10" placeholder='01.04.2023'/>
+                <input type="text" name="tw_end_3" value="{tw_end_3}" size="10" placeholder='30.06.2023'/>
+            </td>
+        </tr>
+        <tr>
+            <td>4. Time Window</td>
+            <td>
+                <input type="text" name="tw_title_4" value="{tw_title_4}" placeholder='title'/>
+                <input type="text" name="tw_start_4" value="{tw_start_4}" size="10" placeholder='01.07.2023'/>
+                <input type="text" name="tw_end_4" value="{tw_end_4}" size="10" placeholder='30.09.2023'/>
+            </td>
+        </tr>
+        <tr>
+            <td>List Cases Time Window</td>
+            <td>
+                <input type="text" style="visibility: hidden;"/>
+                <input type="text" name="list_cases_start" value="{list_cases_start}" size="10" placeholder='01.07.2023'/>
+                <input type="text" name="list_cases_end" value="{list_cases_end}" size="10" placeholder='30.09.2023'/>
+            </td>
+        </tr>
+        <tr>
+            <td>Include in Report</td>
+            <td>
+                <input type="checkbox" name="include_table" value="True" {include_table}>table</input>
+                <input type="checkbox" name="include_overview" value="True" {include_overview}>overview draft text</input>
+                <input type="checkbox" name="include_cases_list" value="True" {include_cases_list}>cases list</input>
+            </td>
+        </tr>
+        <tr>
+            <td>Include in Case</td>
+            <td>
+                <input type="checkbox" name="include_images" value="True" {include_images}>thumbnail image</input>
+                <input type="checkbox" name="include_case_violations" value="True" {include_case_violations}>violations</input>
+                <input type="checkbox" name="include_case_issues" value="True" {include_case_issues}>issues</input>
+                <input type="checkbox" name="include_case_dates" value="True" {include_case_dates}>dates</input>
+            </td>
+        </tr>
+        <tr>
+            <td>view settings</td>
+            <td>
+                <input type="checkbox" id="parsing-messages-visible" checked>
+                show parsing messages
+            </td>
+        </tr>
+        <tr>
+            <td></td>
+            <td><input type='submit' value='Submit' /></td>
+        </tr>
+    </table>
+</form>

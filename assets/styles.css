@@ -1,0 +1,233 @@
+:root {
+    --hrm-green:#004b00;
+    --hrm-blue:#e0ebee;
+    --hrm-grey:#4b4f58;
+}
+@font-face {
+    font-family: BrandonGrotesque;
+    font-display: auto;
+    font-weight: 400;
+    src: 
+    url(https://humanrightsmonitor.org/wp-content/uploads/2022/05/BrandonGrotesqueWeb-Regular.woff2) format('woff2'),
+    url(https://humanrightsmonitor.org/wp-content/uploads/2022/05/BrandonGrotesqueWeb-Regular.woff) format('woff'),
+    url(https://humanrightsmonitor.org/wp-content/uploads/2022/05/BrandonGrotesqueWeb-Regular.eot) format('eot');
+}
+body {
+    margin:0px;
+}
+
+.navbar {
+    display: flex;
+    align-items: center;
+    justify-content: center; /* Center items horizontally */
+    flex-wrap: nowrap;
+    background-color: black; /* Or your chosen navbar color */
+}
+
+.navbar form {
+    display: flex;
+    gap: 1em; /* Sets the distance between elements in the form */
+    align-items: center;
+}
+
+.nav-btn, .log-level-container label {
+    background-color: black;
+    color: white;
+    padding: 14px 20px; /* Adjust padding to match your buttons */
+    margin: 0; /* Adjust margin as needed */
+    border: none;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: 0.3s;
+    font-family: system-ui; /* This makes the font consistent with the rest of the navbar */
+}
+
+.nav-btn:hover, .log-level-container label:hover {
+    opacity: 1; /* This is for hover effect, adjust as needed */
+}
+
+.log-level-container {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    color: white;
+    width: 250px;
+    font-size: 0.8em; /* Adjust the font size as needed to match the buttons */
+    margin-right: 10px;
+}
+
+.log-level-slider {
+    background-color: white; /* Adjust for better visibility if needed */
+    margin: 0 10px; /* Centers the slider between text and right side */
+    flex-grow: 1;
+}
+
+
+.container {
+    font-family: Brandon Grotesque,Helvetica,Arial,sans-serif;
+    display: flex;
+    flex-flow: column nowrap;
+    justify-content: flex-start;
+    align-items: center;
+    background-color: var(--hrm-blue);
+    margin: 0px;
+}
+
+h1, h2, h3 {
+    font-family: 'Playfair Display',serif;
+    color: var(--hrm-green);  
+}
+tr:hover {background-color: var(--hrm-blue);}
+.statistics-container {
+    background-color: #f8f8f8;
+    padding: 10px;
+    margin: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--hrm-grey);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.form-container {
+    background-color: #f8f8f8;
+    padding: 10px;
+    margin: 10px;
+    border-radius: 10px;
+    border: 1px solid var(--hrm-grey);
+    display: flex;
+    flex-flow: row wrap;
+    justify-content: center;
+}
+.form-container.form {
+    margin: 0px;
+}
+.form-container .messages {
+    background-color: var(--hrm-green);
+    color: white;
+    padding: 10px;
+    margin-left: 2rem;
+    overflow-y: auto;
+    max-height: 30rem;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.8rem;
+}
+.messages a {
+    color: white;
+    font-weight: bold;
+}
+.report-container {
+    box-shadow: #4b4f58 0px 0px 20px;
+    margin: 30px 0px;
+    align-self: center;
+    width: 210mm;
+    background-color: white;
+    padding: 25mm;
+    border: 1px solid var(--hrm-grey);
+    /* overflow: hidden; */
+}
+
+.overview-table {
+    border: 1px solid;
+    border-collapse: collapse;
+    width: 70%;
+    float: right;
+}
+
+.tooltip-container {
+    position: relative;
+}
+
+/* .tooltip-content {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    border: 1px solid black;
+    background-color: rgba(253, 253, 253, 0.9); 
+    z-index: 5;
+    border-radius: 5px; 
+    padding: 0.5em;
+    max-width: 210mm; 
+    white-space: nowrap; 
+} */
+.tooltip-content {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 50%; /* Position the left edge of the tooltip at the center of the parent */
+    transform: translateX(-50%); /* Shift the tooltip to the left by half of its width */
+    border: 1px solid black;
+    background-color: rgba(253, 253, 253, 0.9); /* light grey with 10% transparency */
+    z-index: 5;
+    border-radius: 5px; /* Add rounded corners */
+    padding: 0.5em; /* Set margin to 1em */
+    /* max-width: 210mm; Set maximum width to the width "report-container" class */
+    white-space: nowrap; /* Prevent text from wrapping */
+}
+.case {
+    clear: both;
+}
+.case-thumbnail {
+    float:left;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 5px;
+    width: 150px;
+    margin-right: 0.5rem;
+}
+
+.case-violations, .case-issues, .case-dates, .case-tags {
+    color: var(--hrm-green);
+    font-size: 0.8rem;
+    margin-top: 2px;
+}
+.case-violation, .case-issue, {
+    border-radius: 5px;
+    background-color: var(--hrm-blue);
+    padding: 0px 5px;
+    color: grey;
+}
+.case-date, .case-tag {
+    padding: 0px 5px;
+    color: grey;
+}
+
+table.logtable td {
+    padding: 1pt;
+    vertical-align: top;
+}
+table.logtable td.logcell_level {
+    font-weight: bold;
+}
+table.logtable td.logcell_location {
+    text-align: right;
+    max-width: 8em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    direction: rtl;
+    font-family: "Courier New", Courier, monospace;
+}
+
+table.logtable td.logcell_location:hover {
+    max-width: none;
+    white-space: normal;
+}
+
+table.logtable td.logcell_function, table.logtable td.logcell_time, table.logtable td.logcell_line {
+    font-family: "Courier New", Courier, monospace;
+}
+
+table.logtable td.logcell_error {
+    color: rgb(132, 3, 3);
+}
+table.logtable td.logcell_warning {
+    color: rgb(92, 47, 1);
+}
+table.logtable td.logcell_info {
+    color: rgb(0, 28, 0);
+}
+table.logtable td.logcell_critical {
+    color: rgb(194, 0, 165);
+}

@@ -77,6 +77,8 @@ class SecretsAndSettingsManager:
         Returns:
         str: The value of the secret. If the secret could not be retrieved, returns None.
         """
+        secret_value = "?"
+
         if self.key_vault_client is not None:
             try:
                 secret = self.key_vault_client.get_secret(secret_name)
