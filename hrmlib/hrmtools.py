@@ -90,7 +90,7 @@ class SecretsAndSettingsManager:
         Returns:
         str: The value of the secret. If the secret could not be retrieved, returns None.
         """
-
+        secret_value = ""
         if self.key_vault_client is not None:
             try:
                 secret = self.key_vault_client.get_secret(secret_name)
@@ -567,3 +567,32 @@ class DevIntConnector:
         }
 
         return conn_clients
+
+    def analyse_received_http_request(self, http_request):
+
+        def replace_post_chars(string):
+            # see https://www.w3schools.com/tags/ref_urlencode.ASP
+            rs = {"+": " ", "%E2%80%9C": "\"", "%2C": ",", "%3A": ":", "%2F": "/", "%3F": "?", "%3D": "=", "%26": "&", "%23": "#",
+                  "%25": "%", "%22": "\"", "%27": "'", }
+            for key in rs:
+                string = string.replace(key, rs[key])
+            return string
+
+        data = {"method": http_request.method,
+                "url": http_request.url,
+                "header": type(http_request.headers),
+                "data": {}
+                }
+        post_data = {}
+        if http_request.method == "POST":
+            post_data_raw = http_request.get_body().decode("utf-8").split('&')
+            case_tag_options = []
+            if post_data_raw and post_data_raw[0]:
+                for post_data_item in post_data_raw:
+                    post_data_item_parts = post_data_item.split('=')
+                    post_data[post_data_item_parts[0]] = replace_post_chars(
+                        post_data_item_parts[1])
+        elif http_request.method == "GET":
+            post_data = dict(http_request.params)
+        self.logger.log(f"received data with method: {data['method']}<br>")
+        return post_data

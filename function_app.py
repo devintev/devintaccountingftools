@@ -64,8 +64,34 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
     dc.setup(config)
     # data = dc.analyse_received_http_request(req)
 
-    se = config.get_secret("bb-api-key")
     function_app_url = config.get_function_app_url()
+
+    selectors = []
+    if 'coordination' in http_vars and http_vars['coordination'] == '1':
+        selectors.append({'type': 'request', 'condition': 'coordination'})
+    if 'norman' in http_vars and http_vars['norman'] == '1':
+        selectors.append({'type': 'request', 'condition': 'norman'})
+    if 'administration' in http_vars and http_vars['administration'] == '1':
+        selectors.append({'type': 'request', 'condition': 'administration'})
+    if 'documentation' in http_vars and http_vars['documentation'] == '1':
+        selectors.append({'type': 'request', 'condition': 'documentation'})
+    if 'erapurnamasari' in http_vars and http_vars['erapurnamasari'] == '1':
+        selectors.append({'type': 'request', 'condition': 'erapurnamasari'})
+
+    # convert selectors to a string and add to debug log
+    selectors_str = ""
+    for selector in selectors:
+        selectors_str += f"{selector['type']}={selector['condition']} "
+    logger.debug(f"Selectors: {selectors_str}")
+
+    if selectors:
+        pass
+        # instructions = dc.read_instruction_files(container=dc.client["templates_folder"])
+        # bookings = dc.get_all_bb_posts()
+        # asset_stock_accounts = dc.get_all_bb_accounts()
+        # expected_bookings = dc.read_expected_bookings(container=dc.client["financialplanning_folder"])
+        # reports = dc.build_reports(bookings, expected_bookings, instructions, asset_stock_accounts)
+        # dc.send_reports(reports, instructions['distribution'], trigger_selector=selectors)
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     #
