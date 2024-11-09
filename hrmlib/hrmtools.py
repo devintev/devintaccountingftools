@@ -60,7 +60,7 @@ class SecretsAndSettingsManager:
         key_vault_name = getenv("KEY_VAULT_NAME", None)
         if key_vault_name:
             self.logger.debug(
-                "KEY_VAULT_NAME was successfully identified in the environment variables.")
+                "KEY_VAULT_NAME was successfully identified in the environment variables: " + key_vault_name)
             key_vault_Uri = f"https://{key_vault_name}.vault.azure.net"
             if self.credential is not None:
                 try:
