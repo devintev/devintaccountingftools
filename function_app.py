@@ -3,6 +3,7 @@ import logging
 from json2html import json2html
 # import traceback
 import sys
+import os
 # import json
 from datetime import datetime
 
@@ -14,6 +15,7 @@ from hrmlib.hrmtools import (
     extract_data_from_received_http_request,
     replace_and_format_html_template
 )
+# az login --service-principal -u "03d6bd37-4f1d-4c3f-8e42-fbb00a18613c" -p "25c673f4-42a5-43c5-9d6f-f84222b09f19" --tenant "052225af-3db0-4ee8-88d8-27c19a3afed1"
 
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
@@ -41,7 +43,7 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
     logger.debug(
         f'Python HTTP trigger received a request and started running with python version: {str(sys.version)}.')
 
-    logging.info(
+    logger.info(
         'Python HTTP triggered ????? function starts processing a request.')
 
     # dc = common.DevIntConnector()
@@ -65,7 +67,7 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
 
     config = SecretsAndSettingsManager(parent_logger=logger)
     se = config.get_secret("bb-api-key")
-    logging.info(f"Secret: {se}")
+    logger.debug(f"Secret: {se[:4]}")
 
     # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     #
