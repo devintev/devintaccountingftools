@@ -1,22 +1,8 @@
 dateFormat: "%d.%m.%Y"
-titleFont:
-  bold: true
-  size: 18
 rowsForwardForAllRows: 1
 slotTitleRowHeight: 25
 slotListColumnWidth: 12
 slotGroupColumnWidth: 2
-slotTitleFont:
-  bold: true
-  size: 10
-slotTitleAlignment:
-  horizontal: 'center'
-  vertical: 'top'
-  wrap_text: true
-slotDateFont:
-  bold: false
-  size: 6
-  color: '333333'
 slotDateRowHeight: 10
 groupTitleRowWidth: 2
 itemTitleRowWidth: 40
@@ -37,6 +23,15 @@ depth1Font:
   name: 'Cambria'
   bold: true
   size: 12
+
+euroFormat : '#0 €' 
+euroFormatPrecise : '#,##0.00 €'
+
+bookingsCostlocationColumnHeader : 'cost_location'
+bookingsDateColumnHeader : 'date'
+bookingsAmountColumnHeader : 'amount'
+bookingsDebitBookingsType2 : 'debit_booking_type_2'
+bookingsCreditBookingsType2 : 'credit_booking_type_2'
 
 cosmos_db_url: "https://devintaccountingdb.documents.azure.com:443/"
 cosmos_db_id: "WorkingHoursAccounting"

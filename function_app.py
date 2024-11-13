@@ -86,11 +86,15 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
 
     if selectors:
         instructions = dc.read_instruction_files()
-        # bookings = dc.get_all_bb_posts()
-        # asset_stock_accounts = dc.get_all_bb_accounts()
-        # expected_bookings = dc.read_expected_bookings(container=dc.client["financialplanning_folder"])
-        # reports = dc.build_reports(bookings, expected_bookings, instructions, asset_stock_accounts)
-        # dc.send_reports(reports, instructions['distribution'], trigger_selector=selectors)
+        bookings = dc.get_all_bb_posts()
+        asset_stock_accounts = dc.get_all_bb_accounts()
+        expected_bookings = dc.read_expected_bookings()
+        reports = dc.build_reports(
+            bookings, expected_bookings, instructions, asset_stock_accounts)
+        dc.send_reports(reports,
+                        instructions['distribution'],
+                        trigger_selector=selectors,
+                        send=True)
 
         # # # # # # # # # # # # # # # # # # # # # # # # # # # #
         #
@@ -115,7 +119,3 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
     html_page = replace_and_format_html_template(html_page, replace_data)
 
     return func.HttpResponse(html_page, mimetype="text/html", status_code=200)
-    # return func.HttpResponse(
-    #     "Its folly working. Pass a name in the query string or in the request body for a personalized response.",
-    #     status_code=200
-    # )

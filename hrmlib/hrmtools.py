@@ -1,30 +1,53 @@
+# last updated 2024-11-13
 import logging
 import yaml
 import os
+from os import getenv
 import re
 import datetime
+import requests
+import json
+import base64
+from typing import List
 from io import StringIO, BytesIO
+from pytz import timezone
 import pandas as pd
+from bs4 import BeautifulSoup
+
 from azure.keyvault.secrets import SecretClient
 from azure.functions import HttpRequest
 from azure.identity import DefaultAzureCredential
-from bs4 import BeautifulSoup
-from os import getenv
-from typing import List
 from azure.mgmt.web import WebSiteManagementClient
-from azure.storage.blob import BlobServiceClient, BlobClient, ContainerClient
+from azure.storage.blob import BlobServiceClient  # , BlobClient, ContainerClient
 from azure.cosmos import CosmosClient
 import azure.cosmos.exceptions as cdbexceptions
 
-# last updated 2024-10-09
-from sendgrid import SendGridAPIClient
-# from sendgrid.helpers.mail import (Mail, Attachment, FileContent, FileName, FileType, Disposition, ContentId)
-# from openpyxl import Workbook, workbook, styles, load_workbook
-# from openpyxl.worksheet.worksheet import Worksheet
+from tempfile import NamedTemporaryFile
+from openpyxl import Workbook, styles, workbook, load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 # from openpyxl.utils.dataframe import dataframe_to_rows
-# import pymsteams
 
-# from tempfile import NamedTemporaryFile
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import (
+    Mail, Attachment, FileContent, FileName, FileType, Disposition, ContentId)
+import pymsteams
+
+
+class BytesIOWrapper:
+    def __init__(self, string_buffer, encoding='utf-8'):
+        self.string_buffer = string_buffer
+        self.encoding = encoding
+
+    def __getattr__(self, attr):
+        return getattr(self.string_buffer, attr)
+
+    def read(self, size=-1):
+        content = self.string_buffer.read(size)
+        return content.encode(self.encoding)
+
+    def write(self, b):
+        content = b.decode(self.encoding)
+        return self.string_buffer.write(content)
 
 
 class SecretsAndSettingsManager:
@@ -402,6 +425,24 @@ def get_db_config_from_keyvault(config: SecretsAndSettingsManager, logger: loggi
     return db_con_data
 
 
+def save_virtual_workbook(workbook):
+    """Save an openpyxl workbook in memory."""
+
+    try:
+        # Save workbook to a temporary file and read its content
+        with NamedTemporaryFile() as f:
+            workbook.save(f.name)
+            # self.logger.debug("Workbook saved to a temporary file.")
+            f.seek(0)
+            content = f.read()
+            # self.logger.debug("Workbook read into memory.")
+        return content
+
+    except Exception as e:
+        # self.logger.error(f"Error in save_virtual_workbook: {e}")
+        raise
+
+
 class DevIntConnector:
 
     def __init__(self, parent_logger=None, settings_file='devint_settings.yaml'):
@@ -418,12 +459,51 @@ class DevIntConnector:
         self.conn_clients = None
         self.settings = self.load_settings(settings_file)
 
+    def colchar(self, col=0):
+        """Convert a column number to an Excel-style column letter."""
+
+        base = ord('A')
+        rounds = (col - 1) // 26
+        letters = chr(base + ((col - 1) % 26))
+
+        if rounds > 0:
+            letters = chr(base - 1 + rounds) + letters
+
+        return letters
+
+    def check_depth(self, row, depth=1):
+        mdepth = depth
+        if 'children' in row and len(row['children']) > 0:
+            cdepth = depth + 1
+            for child in row['children']:
+                ndepth = self.check_depth(child, cdepth)
+                if ndepth > mdepth:
+                    mdepth = ndepth
+        return mdepth
+
     def load_settings(self, settings_file):
         try:
             with open(settings_file, 'r') as file:
                 settings = yaml.safe_load(file)
                 self.logger.debug(
                     f"Successfully loaded settings from {os.path.abspath(settings_file)}.")
+                additional_settings = {
+                    'slotTitleFont': styles.Font(bold=True, size=10),
+                    'slotTitleAlignment': styles.Alignment(horizontal='center', vertical='top', wrap_text=True),
+                    'slotDateFont': styles.Font(bold=False, size=6, color='333333'),
+                    'titleFont': styles.Font(bold=True, size=18),
+                    'depth1Font': styles.Font(name='Cambria', bold=True, size=12, ),
+                    'depth2Font': styles.Font(name='Cambria', bold=True, size=14, ),
+                    'depth3Font': styles.Font(name='Cambria', bold=True, size=16, ),
+                    'depth4Font': styles.Font(name='Cambria', bold=True, size=18, ),
+                    'depth5Font': styles.Font(name='Cambria', bold=True, size=20, ),
+                    'level0Fill': styles.PatternFill(fill_type='solid', start_color='85bfe6', end_color='85bfe6'),
+                    'level1Fill': styles.PatternFill(fill_type='solid', start_color='96c9eb', end_color='96c9eb'),
+                    'level2Fill': styles.PatternFill(fill_type='solid', start_color='a7d4f2', end_color='a7d4f2'),
+                    'level3Fill': styles.PatternFill(fill_type='solid', start_color='b5dbf5', end_color='b5dbf5'),
+                    'listingsHeaderFill': styles.PatternFill(fill_type='solid', start_color='bee0ec', end_color='bee0ec')
+                }
+                settings.update(additional_settings)
                 return settings
         except FileNotFoundError:
             self.logger.error(
@@ -1211,3 +1291,1610 @@ class DevIntConnector:
 
         self.logger.info("Completed reading instruction files.")
         return instructions
+
+    def get_all_bb_posts(self, start_date="2021-01-01", end_date="2039-12-31"):
+        self.logger.debug("Starting get_all_bb_posts function.")
+
+        try:
+            # Initialize variables for pagination
+            base_url = "https://webapp.buchhaltungsbutler.de/api/v1"
+            request = '/postings/get'
+            url = base_url + request
+            offset = 0
+            limit = 1000
+            retrieved_posts = []
+
+            # Loop to fetch posts until returned rows are less than the limit
+            while True:
+                # Prepare payload and headers for the request
+                payload = json.dumps({
+                    "api_key": self.conn_clients['bb_api_key'],
+                    "date_from": start_date,
+                    "date_to": end_date,
+                    "offset": offset,
+                    "limit": limit
+                })
+                headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': self.conn_clients['bb_authorization'],
+                    'Cookie': 'bbutler=' + self.conn_clients['bb_cookie']
+                }
+
+                # Send request to BB API
+                self.logger.debug(f"Sending request with offset {offset}.")
+                response = requests.request(
+                    "POST", url, headers=headers, data=payload)
+                self.logger.debug("Request sent, awaiting response.")
+
+                # Parse response
+                result = json.loads(response.text)
+                if 'rows' in result and 'data' in result:
+                    rows = result['rows']
+                    retrieved_posts.extend(result['data'])
+                    self.logger.debug(
+                        f"Retrieved {rows} rows; total collected: {len(retrieved_posts)}.")
+
+                    # If rows returned are fewer than limit, exit loop
+                    if rows < limit:
+                        self.logger.debug(
+                            "Final batch retrieved; exiting loop.")
+                        break
+
+                    # Increment offset for next batch
+                    offset += limit
+                else:
+                    # If unexpected response structure, log warning and exit
+                    self.logger.warning(
+                        "Unexpected response structure received from API.")
+                    break
+
+            self.logger.debug("Completed fetching all posts.")
+            return retrieved_posts
+
+        except Exception as e:
+            self.logger.error(f"Error in get_all_bb_posts: {e}")
+            raise
+
+    def get_all_bb_accounts(self):
+        self.logger.debug("Starting get_all_bb_accounts function.")
+
+        try:
+            # Set up API URL and endpoint
+            base_url = "https://webapp.buchhaltungsbutler.de/api/v1"
+            request = '/accounts/get'
+            url = base_url + request
+            self.logger.debug(f"Request URL: {url}")
+
+            # Prepare payload and headers for the request
+            payload = json.dumps({
+                "api_key": self.conn_clients['bb_api_key']
+            })
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': self.conn_clients['bb_authorization'],
+                'Cookie': 'bbutler=' + self.conn_clients['bb_cookie']
+            }
+
+            # Send request to BB API
+            self.logger.debug("Sending request to download all BB accounts.")
+            response = requests.request(
+                "POST", url, headers=headers, data=payload)
+            self.logger.debug("Request sent, awaiting response.")
+
+            # Parse response
+            result = json.loads(response.text)
+            if 'rows' in result and 'data' in result:
+                self.logger.debug(
+                    f"Downloaded {result['rows']} accounts successfully.")
+            else:
+                self.logger.warning(
+                    "Unexpected response structure received from API.")
+
+            return result.get('data', [])
+
+        except Exception as e:
+            self.logger.error(f"Error in get_all_bb_accounts: {e}")
+            raise
+
+    def read_expected_bookings(self, container=None):
+        self.logger.debug("Starting read_expected_bookings function.")
+
+        try:
+            # Initialize the expected bookings structure
+            container = container or self.conn_clients["financialplanning_folder"]
+            expected_bookings = {
+                "sheets": {},
+                "unprocessedSheets": {},
+                "processedSheets": {}
+            }
+
+            # List and check files in the container
+            files_list = container.list_blobs()
+            filenames = [file.name for file in files_list]
+            self.logger.debug(f"Files found in container: {filenames}")
+
+            # Check for "Expected Bookings.xlsx" and process if available
+            if "Expected Bookings.xlsx" in filenames:
+                blob_client = container.get_blob_client(
+                    "Expected Bookings.xlsx")
+                self.logger.debug("Found 'Expected Bookings.xlsx'.")
+
+                # Download all sheets from the Excel file
+                expected_bookings_dfs = self.download_all_sheets(blob_client)
+                for key, df in expected_bookings_dfs.items():
+                    expected_bookings["sheets"][key] = df
+                    expected_bookings["unprocessedSheets"][key] = df
+                    # self.logger.debug(f"Sheet '{key}' added to expected bookings.")
+
+            else:
+                self.logger.warning(
+                    "'Expected Bookings.xlsx' not found in container.")
+
+            self.logger.debug("Completed reading expected bookings.")
+            return expected_bookings
+
+        except Exception as e:
+            self.logger.error(f"Error in read_expected_bookings: {e}")
+            raise
+
+    def add_more_account_information_to_bookings(self, bookings, kontenrahmen):
+        self.logger.debug(
+            "Starting add_more_account_information_to_bookings function.")
+
+        for booking in bookings:
+            debit_account = int(booking['debit_postingaccount_number'])
+            credit_account = int(booking['credit_postingaccount_number'])
+
+            # Process debit account information
+            # self.logger.debug(f"Processing debit account information for account number {debit_account}.")
+            for account in kontenrahmen:
+                if account['accountRangeStart'] <= debit_account <= account['accountRangeEnd']:
+                    booking['debit_booking_type_1'] = account['type1']
+                    booking['debit_booking_type_2'] = account['type2']
+                    categories = [
+                        account.get('category1'),
+                        account.get('category2'),
+                        account.get('category3')
+                    ]
+                    booking['debit_booking_categories'] = [
+                        cat for cat in categories if cat]
+                    # self.logger.debug(f"Assigned debit types and categories for account {debit_account}.")
+                    break
+
+            # Process credit account information
+            # self.logger.debug(f"Processing credit account information for account number {credit_account}.")
+            for account in kontenrahmen:
+                if account['accountRangeStart'] <= credit_account <= account['accountRangeEnd']:
+                    booking['credit_booking_type_1'] = account['type1']
+                    booking['credit_booking_type_2'] = account['type2']
+                    categories = [
+                        account.get('category1'),
+                        account.get('category2'),
+                        account.get('category3')
+                    ]
+                    booking['credit_booking_categories'] = [
+                        cat for cat in categories if cat]
+                    # self.logger.debug(f"Assigned credit types and categories for account {credit_account}.")
+                    break
+
+        self.logger.debug(
+            "Completed adding account information to all bookings.")
+
+    def collect_all_accounts(self, bookings, kontenrahmen):
+        self.logger.debug("Starting collect_all_accounts function.")
+
+        # Initialize dictionary to store account information
+        all_accounts = {}
+
+        # Collect all unique debit and credit accounts from bookings
+        for booking in bookings:
+            debit_account = int(booking['debit_postingaccount_number'])
+            credit_account = int(booking['credit_postingaccount_number'])
+
+            # Initialize account entry if it doesn't exist
+            if debit_account not in all_accounts:
+                all_accounts[debit_account] = {
+                    'bookings': [],
+                    'type 1': booking['debit_booking_type_1'],
+                    'type 2': booking['debit_booking_type_2']
+                }
+                # self.logger.debug(f"Added new debit account {debit_account}.")
+
+            if credit_account not in all_accounts:
+                all_accounts[credit_account] = {
+                    'bookings': [],
+                    'type 1': booking['credit_booking_type_1'],
+                    'type 2': booking['credit_booking_type_2']
+                }
+                # self.logger.debug(f"Added new credit account {credit_account}.")
+
+        # Sort accounts by account number
+        all_accounts = {i: all_accounts[i] for i in sorted(all_accounts)}
+        accounts_list = list(all_accounts.keys())
+        self.logger.debug(
+            f"Found {len(all_accounts)} accounts from {accounts_list[0]} to {accounts_list[-1]}.")
+
+        # Append each booking to its respective debit and credit account
+        for booking in bookings:
+            all_accounts[int(booking['debit_postingaccount_number'])
+                         ]['bookings'].append(booking)
+            all_accounts[int(booking['credit_postingaccount_number'])
+                         ]['bookings'].append(booking)
+
+        # Add category information and calculate balances for each account
+        for account_number, account in all_accounts.items():
+            # Find and assign categories from kontenrahmen
+            for account_info in kontenrahmen:
+                if account_info['accountRangeStart'] <= account_number <= account_info['accountRangeEnd']:
+                    categories = [
+                        account_info.get('category1'),
+                        account_info.get('category2'),
+                        account_info.get('category3')
+                    ]
+                    account['booking_categories'] = [
+                        cat for cat in categories if cat]
+                    # self.logger.debug(f"Assigned categories to account {account_number}: {account['booking_categories']}")
+                    break
+
+            # Sort bookings by date
+            account['bookings'].sort(key=lambda x: x['date'])
+            # self.logger.debug(f"Sorted bookings for account {account_number} by date.")
+
+            # Initialize financial fields
+            account['saldo'] = 0.0
+            account['soll'] = 0.0
+            account['haben'] = 0.0
+
+            # Calculate soll (debit) and haben (credit) values
+            for booking in account['bookings']:
+                amount = float(booking['amount'])
+                if booking['debit_postingaccount_number'] == str(account_number):
+                    account['soll'] += amount
+                if booking['credit_postingaccount_number'] == str(account_number):
+                    account['haben'] += amount
+
+            # Calculate saldo (balance)
+            account['saldo'] = account['soll'] - account['haben']
+            # self.logger.debug(
+            #     f"Calculated saldo for account {account_number}: {account['saldo']}.")
+
+        self.logger.debug("Completed collecting all accounts.")
+        return all_accounts
+
+    def add_up_bookings(self, bookings):
+        # self.logger.debug("Starting add_up_bookings function.")
+
+        # Initialize result and category totals
+        result = {}
+        einnahmen, ausgaben, activa, passiva = 0.0, 0.0, 0.0, 0.0
+
+        # Sum up values based on booking types
+        for booking in bookings:
+            amount = float(booking['amount'])
+            if booking['debit_booking_type_2'] == 'Einnahmen':
+                einnahmen -= amount
+            if booking['credit_booking_type_2'] == 'Einnahmen':
+                einnahmen += amount
+            if booking['debit_booking_type_2'] == 'Ausgaben':
+                ausgaben += amount
+            if booking['credit_booking_type_2'] == 'Ausgaben':
+                ausgaben -= amount
+            if booking['debit_booking_type_2'] == 'Activa':
+                activa += amount
+            if booking['credit_booking_type_2'] == 'Activa':
+                activa -= amount
+            if booking['debit_booking_type_2'] == 'Passiva':
+                passiva -= amount
+            if booking['credit_booking_type_2'] == 'Passiva':
+                passiva += amount
+
+        # Store results in the result dictionary
+        result['revenue'] = einnahmen
+        result['expense'] = ausgaben
+        result['asset'] = activa
+        result['liability'] = passiva
+        result['stock'] = activa - passiva
+        result['profitAndLoss'] = einnahmen - ausgaben
+
+        # Log calculated results
+        # self.logger.debug(f"Calculated totals - Revenue: {result['revenue']}, Expense: {result['expense']}, "
+        #                   f"Asset: {result['asset']}, Liability: {result['liability']}, "
+        #                   f"Stock: {result['stock']}, Profit and Loss: {result['profitAndLoss']}.")
+
+        # self.logger.debug("Completed add_up_bookings function.")
+        return result
+
+    def collect_all_costlocations(self, bookings: list, costlocations: dict):
+        self.logger.debug("Starting collect_all_costlocations function.")
+        self.logger.debug(
+            f"Collecting all cost locations with {len(bookings)} bookings and {len(costlocations)} cost locations.")
+
+        # Initialize dictionary to store cost location information
+        all_costlocations = {}
+
+        # Iterate over each booking to categorize by cost location
+        for booking in bookings:
+            cl = booking['cost_location'] if booking['cost_location'] else 'without'
+
+            # Initialize cost location entry if it doesn't exist
+            if cl not in all_costlocations:
+                all_costlocations[cl] = {'bookings': []}
+
+                # Assign cost location details if available in the costlocations dictionary
+                if str(cl) in costlocations:
+                    costlocation_info = costlocations[cl]
+                    all_costlocations[cl].update({
+                        "limits": costlocation_info.get("limits"),
+                        "type": costlocation_info.get("type"),
+                        "name": costlocation_info.get("name"),
+                        "number": costlocation_info.get("number")
+                    })
+                    # self.logger.debug(f"Added cost location '{cl}' with details: {all_costlocations[cl]}")
+
+        # Sort cost locations by key
+        all_costlocations = {i: all_costlocations[i]
+                             for i in sorted(all_costlocations)}
+        costlocations_list = list(all_costlocations.keys())
+        self.logger.debug(
+            f"Found {len(all_costlocations)} cost locations, ranging from '{costlocations_list[0]}' to '{costlocations_list[-1]}'.")
+
+        # Append bookings to their respective cost location
+        for booking in bookings:
+            if booking['cost_location']:
+                all_costlocations[booking['cost_location']
+                                  ]['bookings'].append(booking)
+            else:
+                all_costlocations['without']['bookings'].append(booking)
+
+        # Log the number of bookings without a cost location, if present
+        if 'without' in all_costlocations:
+            self.logger.debug(
+                f"Found {len(all_costlocations['without']['bookings'])} bookings without a cost location.")
+
+        # Sort bookings by date within each cost location and calculate summary information
+        for cl, costlocation in all_costlocations.items():
+            costlocation['bookings'].sort(key=lambda x: x['date'])
+            # self.logger.debug(f"Sorted bookings for cost location '{cl}' by date.")
+
+            # Calculate summary statistics for each cost location
+            result = self.add_up_bookings(costlocation['bookings'])
+            costlocation.update(result)
+            # self.logger.debug(f"Calculated summary for cost location '{cl}'.")
+
+        self.logger.debug("Completed collecting all cost locations.")
+        return all_costlocations
+
+    def fill_bookings_to_sheet(self, bookings: list, sheet):
+        self.logger.debug("Starting fill_bookings_to_sheet function.")
+
+        def move_a_after_b(lst, a, b):
+            if a in lst and b in lst:
+                lst.remove(a)
+                lst.insert(lst.index(b) + 1, a)
+
+        if bookings:
+            # Prepare headers and adjust their order
+            headers = list(bookings[0].keys())
+            # self.logger.debug("Original headers: " + ", ".join(headers))
+
+            # Reorder headers for better readability in the sheet
+            move_a_after_b(headers, 'debit_booking_type_1',
+                           'debit_postingaccount_number')
+            move_a_after_b(headers, 'debit_booking_type_2',
+                           'debit_booking_type_1')
+            move_a_after_b(headers, 'debit_booking_categories',
+                           'debit_booking_type_2')
+            move_a_after_b(headers, 'credit_booking_type_1',
+                           'credit_postingaccount_number')
+            move_a_after_b(headers, 'credit_booking_type_2',
+                           'credit_booking_type_1')
+            move_a_after_b(headers, 'credit_booking_categories',
+                           'credit_booking_type_2')
+            move_a_after_b(headers, 'booking_number', 'id_by_customer')
+            move_a_after_b(headers, 'date_delivery', 'comment')
+            move_a_after_b(headers, 'date_vat_effective', 'comment')
+            move_a_after_b(headers, 'tax_key', 'comment')
+            move_a_after_b(headers, 'cost_location', 'date')
+            # self.logger.debug("Reordered headers: " + ", ".join(headers))
+
+            # Write headers to the sheet with styling
+            crow, ccol = 1, 1
+            for header in headers:
+                cell = sheet.cell(row=crow, column=ccol)
+                cell.value = header
+                cell.font = styles.Font(bold=True)
+                if header in self.settings.get('bookingsHeaderWidth', {}):
+                    column_width = self.settings['bookingsHeaderWidth'][header]
+                    sheet.column_dimensions[self.colchar(
+                        ccol)].width = column_width
+                    # self.logger.debug(
+                    #     f"Set column width for '{header}' to {column_width}.")
+                ccol += 1
+
+            # Write booking data to the sheet
+            crow += 1
+            for booking in bookings:
+                ccol = 1
+                for header in headers:
+                    cell = sheet.cell(row=crow, column=ccol)
+
+                    try:
+                        if header in ['amount', 'vat', 'receipts_assigned_vat_rates', 'receipts_assigned_assigned_amounts']:
+                            cell.style = 'Comma'
+                            cell.value = float(booking[header])
+                        elif header == 'date':
+                            cell.value = datetime.datetime.strptime(
+                                booking[header], "%Y-%m-%d %H:%M:%S")
+                            cell.number_format = 'DD.MM.YY'
+                        elif header == 'date_vat_effective':
+                            cell.value = datetime.datetime.strptime(
+                                booking[header], "%Y-%m-%d")
+                            cell.number_format = 'DD.MM.YY'
+                        elif header in ['id_by_customer', 'debit_postingaccount_number', 'credit_postingaccount_number', 'tax_key', 'booking_number', 'transactions_id_by_customer']:
+                            cell.value = int(booking[header])
+                        elif header in ['debit_booking_categories', 'credit_booking_categories']:
+                            cell.value = ' - '.join(booking[header])
+                        else:
+                            cell.value = str(booking[header])
+                    except (ValueError, TypeError) as e:
+                        cell.value = str(booking[header])
+                        # self.logger.warning(
+                        #     f"Error formatting cell for '{header}': {e}")
+
+                    ccol += 1
+                crow += 1
+
+        self.logger.debug("Completed filling bookings to sheet.")
+
+    def fill_costlocations_to_sheet(self, costlocations: dict, sheet):
+        self.logger.debug("Starting fill_costlocations_to_sheet function.")
+
+        # Extract headers from cost locations and adjust their order
+        headers = list(costlocations[list(costlocations.keys())[0]].keys())
+        headers.remove('bookings')
+        headers.remove('type')
+        headers.insert(0, 'cost_location')
+        self.logger.debug(f"Headers for cost locations: {headers}")
+
+        # Write headers to the sheet with styling
+        crow, ccol = 1, 1
+        for header in headers:
+            cell = sheet.cell(row=crow, column=ccol)
+            cell.value = header.replace('type', 'category') if header in [
+                'type 1', 'type 2'] else header
+            cell.font = styles.Font(bold=True)
+            # self.logger.debug(f"Added header '{cell.value}' at row {crow}, column {ccol}.")
+            ccol += 1
+
+        # Reset starting row for data population
+        crow += 1
+
+        # Populate rows with cost location data
+        for number, costlocation in costlocations.items():
+            # Skip non-item types
+            if 'type' in costlocation and costlocation['type'] != 'item':
+                self.logger.debug(
+                    f"Skipping cost location '{number}' due to non-item type.")
+                continue
+
+            ccol = 1
+            for header in headers:
+                cell = sheet.cell(row=crow, column=ccol)
+
+                # Handle specific headers with customized cell values
+                if header == 'cost_location':
+                    cell.value = '' if number == 'without' else int(number)
+                elif header == 'limits':
+                    if header in costlocation:
+                        cell.value = ' - '.join([f"{k}: {v}" for k,
+                                                v in costlocation[header].items()])
+                    else:
+                        cell.value = ''
+                elif header in ['type', 'name', 'number']:
+                    cell.value = costlocation.get(header, '')
+                elif header in ['revenue', 'expense', 'asset', 'liability', 'stock', 'profitAndLoss']:
+                    try:
+                        cell.style = 'Comma'
+                        cell.value = float(costlocation[header])
+                    except (ValueError, TypeError):
+                        cell.value = str(costlocation.get(header, ''))
+                        self.logger.warning(
+                            f"Non-numeric value for '{header}' in cost location '{number}': {cell.value}")
+                else:
+                    cell.value = str(costlocation.get(header, ''))
+
+                # self.logger.debug(f"Set value for header '{header}' at row {crow}, column {ccol}.")
+                ccol += 1
+
+            crow += 1
+
+        self.logger.debug("Completed filling cost locations to sheet.")
+
+    def fill_accounts_to_sheet(self, accounts: dict, sheet):
+        self.logger.debug("Starting fill_accounts_to_sheet function.")
+
+        # Prepare headers and reorder them
+        headers = list(accounts[list(accounts.keys())[0]].keys())
+        headers.remove('bookings')
+        headers.insert(0, 'account')
+
+        # Move 'booking_categories' to follow 'type 2', if present
+        if 'booking_categories' in headers and 'type 2' in headers:
+            headers.remove('booking_categories')
+            headers.insert(headers.index('type 2') + 1, 'booking_categories')
+        self.logger.debug(f"Headers for accounts: {headers}")
+
+        # Write headers to the sheet with styling
+        crow, ccol = 1, 1
+        for header in headers:
+            cell = sheet.cell(row=crow, column=ccol)
+            cell.value = header.replace('type', 'category') if header in [
+                'type 1', 'type 2'] else header
+            cell.font = styles.Font(bold=True)
+            # self.logger.debug(f"Added header '{cell.value}' at row {crow}, column {ccol}.")
+            ccol += 1
+
+        # Reset starting row for data
+        crow += 1
+
+        # Populate rows with account data
+        for number, account in accounts.items():
+            ccol = 1
+            for header in headers:
+                cell = sheet.cell(row=crow, column=ccol)
+
+                # Handle specific headers with customized cell values
+                if header == 'account':
+                    cell.value = int(number)
+                elif header == 'booking_categories':
+                    cell.value = ' - '.join(account[header])
+                elif header in ['saldo', 'soll', 'haben']:
+                    try:
+                        cell.style = 'Comma'
+                        cell.value = float(account[header])
+                    except (ValueError, TypeError):
+                        cell.value = str(account[header])
+                        self.logger.warning(
+                            f"Non-numeric value for '{header}' in account '{number}': {cell.value}")
+                else:
+                    cell.value = str(account.get(header, ''))
+
+                # self.logger.debug(f"Set value for header '{header}' at row {crow}, column {ccol}.")
+                ccol += 1
+
+            crow += 1
+
+        self.logger.debug("Completed filling accounts to sheet.")
+
+    def get_bookings_sheet_name(self, report_id: str):
+        """Generate the sheet name for bookings based on report ID."""
+        sheet_name = f"{report_id} Buchungen"
+        return sheet_name
+
+    def get_listings_sheet_name(self, report_id: str, listing: dict):
+        """Generate the sheet name for listings based on report ID and listing name."""
+        sheet_name = f"{report_id} Kst-Bericht {listing['name']}"
+        return sheet_name
+
+    def fill_report_row_to_listings_sheet(self, report: dict, report_row: dict, sheet: Worksheet, selected_headers: list, current_row: int = 5, first_col: int = 1, depth: int = 1, sub_rows: int = 0):
+        # self.logger.debug(f"Starting fill_report_row_to_listings_sheet for report row '{report_row['name']}' with type '{report_row['type']}'.")
+
+        crow = current_row
+        col = first_col
+
+        # Handle rows representing budget groups
+        if report_row['type'] == 'group':
+            level = len(report_row['hierarchyLocation'])
+            font = self.settings.get(
+                f'depth{depth - level}Font', self.settings['depth5Font'])
+            fill = self.settings.get(
+                f'level{level}Fill', self.settings['level0Fill'])
+
+            # Set group row styling and name
+            cell = sheet.cell(row=crow, column=col + level)
+            cell.value = report_row['name']
+            cell.font = font
+            cell.fill = fill
+            # self.logger.debug(f"Set group row '{report_row['name']}' with font and fill at row {crow}, column {col + level}.")
+
+            # Apply font and fill across the entire row span
+            for i in range(level, depth + len(selected_headers)):
+                cell = sheet.cell(row=crow, column=col + i)
+                cell.font = font
+                cell.fill = fill
+            # self.logger.debug(f"Applied group row style across columns for row '{report_row['name']}'.")
+
+        # Handle rows representing actual budget lines (expense or income)
+        elif report_row['type'] in ['expense', 'income']:
+            col = first_col
+
+            # Apply styling across the budget line row
+            for i in range(first_col + depth - 2, depth + len(selected_headers)):
+                cell = sheet.cell(row=crow, column=col + i)
+                cell.font = self.settings['depth1Font']
+                cell.fill = self.settings['listingsHeaderFill']
+            # self.logger.debug(f"Applied budget line style for row '{report_row['name']}'.")
+
+            # Set name and cost location info
+            info_string = f"{report_row['name']} ( cost locations: {', '.join(report_row['costLocationsStrings'])} )" if report_row[
+                'costLocationsStrings'] else report_row['name']
+            sheet.cell(row=crow, column=col + depth - 1).value = info_string
+            # self.logger.debug(f"Set info string for row '{report_row['name']}': {info_string}.")
+
+            # Calculate and set SUM formula for amount column
+            amount_col = first_col + depth + len(selected_headers) - 2
+            start_cell = sheet.cell(row=crow + 1, column=amount_col)
+            end_cell = sheet.cell(row=crow + sub_rows, column=amount_col)
+            sum_formula = f"=SUM({start_cell.coordinate}:{end_cell.coordinate})"
+            amount_cell = sheet.cell(row=crow, column=amount_col)
+            amount_cell.value = sum_formula
+            amount_cell.number_format = self.settings['euroFormatPrecise']
+            # self.logger.debug(f"Set SUM formula '{sum_formula}' in amount column for row '{report_row['name']}'.")
+
+        # self.logger.debug(f"Completed filling report row '{report_row['name']}' in listings sheet.")
+
+    def select_bookings_by_costlocation(self, cost_locations: list, bookings: list):
+        # self.logger.debug(f"Starting select_bookings_by_costlocation with {len(cost_locations)} cost locations and {len(bookings)} bookings.")
+
+        # Convert cost locations to strings for comparison
+        string_cost_locations = [str(cl) for cl in cost_locations]
+        selected_bookings = []
+
+        # Select bookings that match any of the specified cost locations
+        for booking in bookings:
+            if booking['cost_location'] in string_cost_locations or booking['cost_location'] in cost_locations:
+                selected_bookings.append(booking)
+
+        # self.logger.debug(f"Selected {len(selected_bookings)} bookings matching specified cost locations.")
+        return selected_bookings
+
+    def fill_listings_sheet(self, report: dict, sheet: Worksheet, listing: dict):
+        self.logger.debug(
+            f"Starting fill_listings_sheet for listing: '{listing['name']}' in report '{report['name']}'.")
+
+        first_report_column = 1
+        report_structure_levels = max(self.check_depth(row, 1)
+                                      for row in report['rows'])
+        self.logger.debug(
+            f"Calculated report structure levels: {report_structure_levels}.")
+
+        crow = 1
+        selected_headers = [
+            'date', 'booking_number', 'cost_location',
+            'debit_postingaccount_number', 'credit_postingaccount_number',
+            'postingtext', 'amount', 'currency'
+        ]
+        header_width = self.settings['bookingsHeaderWidth']
+
+        # Add information about the time window
+        cell = sheet.cell(row=crow, column=report_structure_levels)
+        start_date_string = listing['start'].strftime('%Y-%m-%d')
+        end_date_string = listing['end'].strftime('%Y-%m-%d')
+        cell.value = f"Time window: from {start_date_string} to {end_date_string}"
+        cell.font = styles.Font(bold=True)
+        self.logger.debug(
+            f"Added time window info: '{cell.value}' at row {crow}.")
+        crow += 2
+
+        # Add table headers
+        ccol = report_structure_levels + 1
+        for header in selected_headers:
+            col_letter = self.colchar(ccol)
+            if header in header_width:
+                sheet.column_dimensions[col_letter].width = header_width[header]
+            elif 'default' in header_width and header_width['default'] is not False:
+                sheet.column_dimensions[col_letter].width = header_width['default']
+
+            cell = sheet.cell(row=crow, column=ccol)
+            cell.value = header
+            cell.font = styles.Font(bold=True)
+            # self.logger.debug(
+            #     f"Added header '{header}' at column {col_letter} with width setting.")
+            ccol += 1
+        crow += 1
+
+        # Adjust column widths for report structure
+        for i in range(first_report_column, report_structure_levels + 1):
+            col_letter = self.colchar(i)
+            sheet.column_dimensions[col_letter].width = self.settings['groupTitleRowWidth']
+        # self.logger.debug(
+        #     "Adjusted column widths for report structure levels.")
+
+        # Populate rows with report data
+        for row in report['rows']:
+            selected_bookings = []
+            if row['type'] in ['expense', 'income']:
+                selected_bookings = self.select_bookings_by_costlocation(
+                    row['costLocations'], report['bookings'])
+                # self.logger.debug(
+                #     f"Selected {len(selected_bookings)} bookings for row '{row['name']}' with type '{row['type']}'.")
+
+            # Fill in report row
+            if not (row['type'] == 'group' and row['name'] == ''):
+                self.fill_report_row_to_listings_sheet(
+                    report, row, sheet, selected_headers, crow,
+                    first_col=first_report_column, depth=report_structure_levels, sub_rows=len(
+                        selected_bookings)
+                )
+                # self.logger.debug(
+                #     f"Filled report row '{row['name']}' at row {crow}.")
+                crow += 1
+
+                # Fill in selected bookings if available
+                if row['type'] in ['expense', 'income'] and selected_bookings:
+                    self.fill_bookings_listings_sheet(
+                        selected_bookings, sheet, crow, selected_headers,
+                        first_col=first_report_column + report_structure_levels
+                    )
+                    crow += len(selected_bookings)
+                    # self.logger.debug(
+                    #     f"Filled {len(selected_bookings)} bookings for row '{row['name']}'.")
+
+        self.logger.debug(
+            f"Completed filling listings sheet for '{listing['name']}' in report '{report['name']}'.")
+
+    def fill_bookings_listings_sheet(self, bookings: list, sheet: Worksheet, current_row: int, selected_headers: list, first_col: int = 1):
+        # self.logger.debug(
+        #     f"Starting fill_bookings_listings_sheet with {len(bookings)} bookings and headers: {selected_headers}.")
+
+        crow = current_row
+        for booking in bookings:
+            ccol = first_col
+            for header in selected_headers:
+                cell = sheet.cell(row=crow, column=ccol)
+
+                # Set cell value and format based on header type
+                try:
+                    if header in ['amount', 'vat', 'receipts_assigned_vat_rates', 'receipts_assigned_assigned_amounts']:
+                        cell.style = 'Comma'
+                        cell.value = float(booking[header])
+                    elif header == 'date':
+                        cell.value = datetime.datetime.strptime(
+                            booking[header], "%Y-%m-%d %H:%M:%S")
+                        cell.number_format = 'DD.MM.YY'
+                    elif header == 'date_vat_effective':
+                        cell.value = datetime.datetime.strptime(
+                            booking[header], "%Y-%m-%d")
+                        cell.number_format = 'DD.MM.YY'
+                    elif header in ['id_by_customer', 'debit_postingaccount_number', 'credit_postingaccount_number', 'tax_key', 'booking_number', 'transactions_id_by_customer']:
+                        cell.value = int(booking[header])
+                    elif header in ['debit_booking_categories', 'credit_booking_categories']:
+                        cell.value = ' - '.join(booking[header])
+                    else:
+                        cell.value = str(booking[header])
+                except (ValueError, TypeError) as e:
+                    cell.value = str(booking.get(header, ''))
+                    self.logger.warning(
+                        f"Error processing '{header}' in booking at row {crow}: {e}")
+
+                # self.logger.debug(
+                #     f"Set value for header '{header}' at row {crow}, column {ccol}.")
+                ccol += 1
+            crow += 1
+
+        # self.logger.debug("Completed filling bookings listings sheet.")
+
+    def add_slot_header(self, sheet, slot: dict, col: int = 1, row: int = 1, depth: int = 1):
+        # self.logger.debug(f"Starting add_slot_header for slot '{slot['name']}' at column {col}, row {row} with depth {depth}.")
+
+        # Set slot title and row height
+        sheet.cell(row=row, column=col).value = slot['name']
+        sheet.row_dimensions[row].height = self.settings['slotTitleRowHeight']
+        # self.logger.debug(f"Set slot title '{slot['name']}' and row height.")
+
+        # Configure start and end date rows
+        slot['startDateRow'] = row + 1
+        slot['endDateRow'] = slot['startDateRow'] + 1
+        # self.logger.debug(f"Configured startDateRow as {slot['startDateRow']} and endDateRow as {slot['endDateRow']}.")
+
+        # Set column widths based on depth
+        for i in range(depth):
+            column_width = self.settings['slotListColumnWidth'] if i == (
+                depth - 1) else self.settings['slotGroupColumnWidth']
+            sheet.column_dimensions[self.colchar(col + i)].width = column_width
+            # self.logger.debug(
+            #     f"Set column width for column {self.colchar(col + i)} to {column_width}.")
+
+        # Merge cells based on depth
+        if depth > 1:
+            sheet.merge_cells(start_row=row, start_column=col,
+                              end_row=row, end_column=col + depth - 1)
+        if depth > 2:
+            sheet.merge_cells(start_row=slot['startDateRow'], start_column=col,
+                              end_row=slot['startDateRow'], end_column=col + depth - 2)
+            sheet.merge_cells(start_row=slot['endDateRow'], start_column=col,
+                              end_row=slot['endDateRow'], end_column=col + depth - 2)
+        # self.logger.debug(f"Merged cells for slot '{slot['name']}' based on depth.")
+
+        # Apply font and alignment settings
+        title_cell = sheet.cell(row=row, column=col)
+        title_cell.alignment = self.settings['slotTitleAlignment']
+        title_cell.font = self.settings['slotTitleFont']
+        # self.logger.debug(f"Applied title font and alignment for slot '{slot['name']}'.")
+
+        # Apply date fonts and set row heights for date rows
+        for cell in sheet[str(slot['startDateRow']) + ":" + str(slot['startDateRow'])]:
+            cell.font = self.settings['slotDateFont']
+        for cell in sheet[str(slot['endDateRow']) + ":" + str(slot['endDateRow'])]:
+            cell.font = self.settings['slotDateFont']
+        sheet.row_dimensions[slot['startDateRow']
+                             ].height = self.settings['slotDateRowHeight']
+        sheet.row_dimensions[slot['endDateRow']
+                             ].height = self.settings['slotDateRowHeight']
+        # self.logger.debug(f"Set date fonts and row heights for start and end date rows.")
+
+        # Set "from" and "to" labels and corresponding dates if depth > 2
+        if depth > 2:
+            sheet.cell(row=slot['startDateRow'], column=col).value = "from:"
+            sheet.cell(row=slot['endDateRow'], column=col).value = "to:"
+        start_date_string = slot['start'].strftime(self.settings['dateFormat'])
+        end_date_string = slot['end'].strftime(self.settings['dateFormat'])
+        sheet.cell(row=slot['startDateRow'], column=col +
+                   depth - 1).value = start_date_string
+        sheet.cell(row=slot['endDateRow'], column=col +
+                   depth - 1).value = end_date_string
+        # self.logger.debug(f"Set date values: start '{start_date_string}', end '{end_date_string}'.")
+
+        # Store slot cell references and boundaries
+        slot['startRow'] = row
+        slot['endRow'] = row + 2
+        slot['startColumn'] = col
+        slot['endColumn'] = col + depth - 1
+        slot['startDateCellReference'] = f"{self.colchar(slot['endColumn'])}${slot['startDateRow']}"
+        slot['endDateCellReference'] = f"{self.colchar(slot['endColumn'])}${slot['endDateRow']}"
+        # self.logger.debug(f"Set slot cell references: start '{slot['startDateCellReference']}', end '{slot['endDateCellReference']}'.")
+
+        # self.logger.debug(f"Completed adding slot header for slot '{slot['name']}'.")
+
+    def build_group_summation_formula(self, report_row: dict, slot: dict, report: dict, cell_column: int):
+        # self.logger.debug(f"Starting build_group_summation_formula for row '{report_row['name']}' with type '{report_row['type']}'.")
+
+        max_levels = report['structureDepth'] - report['numSaldoRows']
+        is_saldo_row = report_row['type'].lower() == "group" and len(
+            report_row['hierarchyLocation']) == 0
+
+        # Helper functions to calculate child rows and types
+        def all_children(row: dict):
+            return sum(1 + all_children(child) for child in row.get('children', []))
+
+        def get_summation_type(row: dict):
+            if 'children' in row:
+                types = set()
+                for child in row['children']:
+                    types.update(get_summation_type(child))
+                return types
+            return {row['type']}
+
+        types = get_summation_type(report_row)
+        its_an_item_group = 'children' in report_row and report_row['children'][0]['type'] in [
+            'expense', 'income']
+        column_to_be_summed = slot['slotDetails']['startColumn'] + \
+            max_levels - 1 - (1 if is_saldo_row else 0)
+
+        # Determine the type of summation needed
+        if len(types) == 1:
+            if its_an_item_group:
+                sub_rows = sorted(
+                    report_row['children'], key=lambda x: x['rowNumber'])
+                if sub_rows:
+                    formula = f"=SUM({self.colchar(column_to_be_summed)}{sub_rows[0]['rowNumber']}:{self.colchar(column_to_be_summed)}{sub_rows[-1]['rowNumber']})" if len(
+                        sub_rows) > 1 else f"={self.colchar(column_to_be_summed)}{sub_rows[0]['rowNumber']}"
+                    # self.logger.debug(f"Generated item group summation formula: '{formula}'")
+                    return formula
+                else:
+                    # self.logger.error(f"No sub rows for item group '{report_row['name']}'")
+                    return "=0"
+            else:
+                # Group of groups summation
+                children = report_row['children']
+                formula = f"=SUM({self.colchar(column_to_be_summed)}{children[0]['rowNumber']}:{self.colchar(column_to_be_summed)}{children[-1]['rowNumber']})" if len(
+                    children) > 1 else f"={self.colchar(column_to_be_summed)}{children[0]['rowNumber']}"
+                # self.logger.debug(f"Generated group summation formula: '{formula}'")
+                return formula
+
+        elif len(types) > 1 and any(t in types for t in ['expense', 'income', '']):
+            if 'children' in report_row:
+                formula_parts = [
+                    f"{'+' if 'income' in get_summation_type(child) else '-'}{self.colchar(column_to_be_summed)}{child['rowNumber']}"
+                    for child in report_row['children']
+                ]
+                formula = "=" + "".join(formula_parts)
+                # self.logger.debug(f"Generated mixed-type summation formula: '{formula}'")
+                return formula
+            else:
+                # self.logger.error(f"Error: two sub item types with issues in '{report_row['name']}'")
+                return "Error: two sub item types but problems"
+
+        # self.logger.debug(f"Completed formula generation for row '{report_row['name']}'.")
+        return ""
+
+    def get_column_letter_by_column_header(self, sheet, header: str):
+        for cell in sheet["1:1"]:
+            if cell.value == header:
+                return cell.column_letter
+
+    def fill_row_to_sheet(self, report: dict, report_row: dict, sheet: Worksheet, bookings_sheet: str, first_col: int = 1, depth: int = 1):
+        # self.logger.debug(
+        #     f"Starting fill_row_to_sheet for report row '{report_row['name']}' with type '{report_row['type']}'.")
+
+        crow = report_row['rowNumber']
+        col = first_col
+
+        # Handle budget group rows
+        if report_row['type'] == 'group':
+            level = len(report_row['hierarchyLocation'])
+            font = self.settings.get(
+                f'depth{depth - level}Font', self.settings['depth5Font'])
+            fill = self.settings.get(
+                f'level{level}Fill', self.settings['level0Fill'])
+
+            # Set row title and format cells
+            cell = sheet.cell(row=crow, column=col + level)
+            cell.value = report_row['name']
+            cell.font = font
+            cell.fill = fill
+            # self.logger.debug(f"Set group title '{report_row['name']}' with font and fill at row {crow}, column {col + level}.")
+
+            # Apply formatting across columns for the group row
+            for i in range(level, depth + 1 + depth * len(report_row['slots'])):
+                cell = sheet.cell(row=crow, column=col + i)
+                cell.font = font
+                cell.fill = fill
+
+            # Fill slots for the group row
+            for slot_number, slot in enumerate(report_row['slots']):
+                start_column = slot['slotDetails']['startColumn']
+                end_column = slot['slotDetails']['endColumn']
+                cell_column = start_column + (level - 1 if level > 0 else 0)
+                cell = sheet.cell(row=crow, column=cell_column)
+
+                # Set value or formula based on slot type
+                if slot['type'] == 'budget' and 'limit' in slot:
+                    cell.value = slot['limit']
+                    cell.number_format = self.settings['euroFormat']
+                else:  # Summary row with formula
+                    formula = self.build_group_summation_formula(
+                        report_row, slot, report, cell_column)
+                    cell.value = formula
+                    cell.number_format = self.settings['euroFormat']
+                sheet.merge_cells(
+                    start_row=crow, start_column=cell_column, end_row=crow, end_column=end_column)
+
+            # self.logger.debug(f"Filled slots for group row '{report_row['name']}'.")
+
+        # Handle actual budget lines (expense or income) at the deepest level
+        elif report_row['type'] in ['expense', 'income'] and bookings_sheet:
+            sheet.cell(row=crow, column=col + depth -
+                       1).value = report_row['name']
+            sheet.cell(row=crow, column=col +
+                       depth).value = ', '.join(report_row['costLocationsStrings'])
+
+            # Define ranges for bookings formula
+            bookings_start_row = 2
+            bookings_end_row = len(report['bookings']) + 100
+            bsn = self.get_bookings_sheet_name(report['id'])
+            amount_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsAmountColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
+            costlocation_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsCostlocationColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
+            date_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsDateColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
+            dbt2_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsDebitBookingsType2'])}{bookings_start_row}:{bookings_end_row}"
+            cbt2_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsCreditBookingsType2'])}{bookings_start_row}:{bookings_end_row}"
+            # self.logger.debug(
+            #     f"Configured cell ranges for bookings data in '{bsn}'.")
+
+            # Define functions to create formulas based on slot details and cost location checks
+            def formula_opening_cl_cell(slot_details, cell_range, cell_range_search_term):
+                return (f"SUMIFS('{bsn}'!{amount_cell_range},'{bsn}'!{costlocation_cell_range},$"
+                        f"{self.colchar(col + depth)},'{bsn}'!{date_cell_range},\">=\"&{slot_details['startDateCellReference']},"
+                        f"'{bsn}'!{date_cell_range},\"<\"&{slot_details['endDateCellReference']}+1,'{bsn}'!{cell_range},\"{cell_range_search_term}\")")
+
+            def formula_opening_cl_value(slot_details, cost_location, cell_range, cell_range_search_term):
+                return (f"SUMIFS('{bsn}'!{amount_cell_range},'{bsn}'!{costlocation_cell_range},\"{cost_location}\","
+                        f"'{bsn}'!{date_cell_range},\">=\"&{slot_details['startDateCellReference']},"
+                        f"'{bsn}'!{date_cell_range},\"<\"&{slot_details['endDateCellReference']}+1,'{bsn}'!{cell_range},\"{cell_range_search_term}\")")
+
+            # Generate formula for each slot in the row
+            for slot in report_row['slots']:
+                slot_details = slot['slotDetails']
+                cell = sheet.cell(row=crow, column=slot_details['endColumn'])
+
+                # Build formula based on cost location count
+                if slot['type'] == 'budget' and 'limit' in slot:
+                    cell.value = slot['limit']
+                    cell.number_format = self.settings['euroFormat']
+                elif slot['type'] == 'bookings' and report['bookings']:
+                    formula = ""
+                    if len(report_row["costLocationsStrings"]) > 1:
+                        formula_parts = [
+                            f"{sign}{formula_opening_cl_value(slot_details, cl, cell_range, term)}"
+                            for cl in report_row["costLocationsStrings"]
+                            for sign, cell_range, term in [
+                                ("", dbt2_cell_range, "Ausgaben"), ("-",
+                                                                    cbt2_cell_range, "Einnahmen"),
+                                ("+", dbt2_cell_range, "Einnahmen"), ("-",
+                                                                      cbt2_cell_range, "Ausgaben")
+                            ]
+                        ]
+                        formula = "+".join(formula_parts)
+                    else:
+                        formula = (
+                            f"{formula_opening_cl_cell(slot_details, dbt2_cell_range, 'Ausgaben')}-"
+                            f"{formula_opening_cl_cell(slot_details, cbt2_cell_range, 'Einnahmen')}+"
+                            f"{formula_opening_cl_cell(slot_details, dbt2_cell_range, 'Einnahmen')}-"
+                            f"{formula_opening_cl_cell(slot_details, cbt2_cell_range, 'Ausgaben')}"
+                        )
+
+                    cell.value = f"={'-' if report_row['type'] == 'income' else ''}({formula})"
+                    cell.number_format = self.settings['euroFormat']
+                    cell.alignment = styles.Alignment(horizontal="right")
+                    # self.logger.debug(f"Set formula for slot '{slot['name']}' in row '{report_row['name']}'.")
+
+        # self.logger.debug(f"Completed filling row '{report_row['name']}' in sheet.")
+
+    def set_border_to_area(self,
+                           sheet, start_column=0, start_row=0, end_column=5, end_row=5,
+                           side: styles.Side = styles.Side(
+            border_style='thin', color='FF000000'),
+            top=True, bottom=True, left=True, right=True):
+
+        if top:
+            for col in range(start_column, end_column + 1):
+                sheet.cell(row=start_row, column=col).border = styles.Border(
+                    top=side)
+        if bottom:
+            for col in range(start_column, end_column + 1):
+                sheet.cell(row=end_row, column=col).border = styles.Border(
+                    bottom=side)
+        if left:
+            for row in range(start_row, end_row + 1):
+                sheet.cell(row=row, column=start_column).border = styles.Border(
+                    left=side)
+        if right:
+            for row in range(start_row, end_row + 1):
+                sheet.cell(row=row, column=end_column).border = styles.Border(
+                    right=side)
+        if top and left:
+            sheet.cell(row=start_row, column=start_column).border = styles.Border(
+                top=side, left=side)
+        if top and right:
+            sheet.cell(row=start_row, column=end_column).border = styles.Border(
+                top=side, right=side)
+        if bottom and left:
+            sheet.cell(row=end_row, column=start_column).border = styles.Border(
+                bottom=side, left=side)
+        if bottom and right:
+            sheet.cell(row=end_row, column=end_column).border = styles.Border(
+                bottom=side, right=side)
+
+    def fill_report_to_sheet(self, report: dict, sheet, bookings_sheet, listings_sheets=[]):
+        self.logger.debug(
+            f"Starting fill_report_to_sheet for report: '{report['name']}'.")
+
+        # Fill bookings sheet with data
+        self.fill_bookings_to_sheet(report['bookings'], bookings_sheet)
+        self.logger.debug("Filled bookings sheet with report data.")
+
+        # Fill listings sheets if they exist
+        if listings_sheets:
+            listings_sheets_names = [sheet.title for sheet in listings_sheets]
+            if "listings" in report and report["listings"]:
+                for listing in report["listings"]:
+                    listing_sheet_name = self.get_listings_sheet_name(
+                        report['id'], listing)
+                    if listing_sheet_name in listings_sheets_names:
+                        sheet_index = listings_sheets_names.index(
+                            listing_sheet_name)
+                        self.fill_listings_sheet(
+                            report, listings_sheets[sheet_index], listing)
+                        # self.logger.debug(f"Filled listings sheet '{listing_sheet_name}' with data from report '{report['name']}'.")
+
+        # Add title and information to the main sheet
+        crow, ccol = 1, 1
+        cell = sheet.cell(row=crow, column=ccol)
+        cell.value = report['name']
+        sheet.merge_cells(start_row=crow, start_column=ccol,
+                          end_row=crow, end_column=ccol + 10)
+        cell.font = self.settings['titleFont']
+        self.logger.debug(f"Added title '{report['name']}' to sheet.")
+
+        # Display compilation information and last booking date
+        last_date_str = sorted(
+            report['bookings'], key=lambda booking: booking['date'])[-1]['date']
+        last_date = datetime.datetime.strptime(
+            last_date_str, '%Y-%m-%d %H:%M:%S')
+        info_text = f"compiled: {datetime.datetime.today().strftime('%d.%m.%Y')} with last booking from {last_date.strftime('%d.%m.%Y')}"
+        sheet.cell(row=crow + 1, column=ccol).value = info_text
+        self.logger.debug(
+            "Added compilation and last booking date information.")
+
+        # Set row and column settings for report rows and slots
+        crow += 2
+        rows = report['rows']
+        report_structure_levels = report['structureDepth'] - \
+            report['numSaldoRows']
+        first_slot_col = report_structure_levels + 2
+        rows_forward_per_row = self.settings['rowsForwardForAllRows']
+
+        # Add headers for each slot
+        for slot_number, slot in enumerate(report['slots']):
+            slot_col = first_slot_col + slot_number * report_structure_levels
+            self.add_slot_header(sheet, slot, col=slot_col,
+                                 row=crow, depth=report_structure_levels)
+            # self.logger.debug(f"Added slot header for slot {slot_number} at column {slot_col}, row {crow}.")
+
+        crow += 4
+        first_data_row = crow
+
+        # Set row numbers for report rows
+        for row in rows:
+            if row['type'].lower() == "group" and not row['hierarchyLocation']:
+                crow += 1
+            row['rowNumber'] = crow
+            crow += rows_forward_per_row
+            for slot in row['slots']:
+                slot['slotDetails']['endRow'] = max(
+                    slot['slotDetails']['endRow'], crow)
+        crow = first_data_row
+
+        # Adjust column widths for report structure levels
+        for i in range(report_structure_levels):
+            col_letter = self.colchar(i + 1)
+            sheet.column_dimensions[col_letter].width = self.settings['groupTitleRowWidth']
+        sheet.column_dimensions[self.colchar(
+            report_structure_levels)].width = self.settings['itemTitleRowWidth']
+        sheet.column_dimensions[self.colchar(
+            report_structure_levels + 1)].width = self.settings['costLocationColumnWidth']
+
+        self.logger.debug(f"report keys: {report.keys()}")
+
+        # # Populate each row in the report
+        for row in rows:
+            self.fill_row_to_sheet(
+                report, row, sheet, bookings_sheet, first_col=1, depth=report_structure_levels)
+            # self.logger.debug(f"Filled row {row['rowNumber']} for report '{report['name']}'.")
+
+        # Add borders around slots in the sheet
+        for slot in report['slots']:
+            self.set_border_to_area(sheet, slot['startColumn'], slot['startRow'],
+                                    slot['endColumn'], slot['endRow'] - report['numSaldoRows'])
+            # self.logger.debug(f"Set border for slot starting at column {slot['startColumn']}, row {slot['startRow']}.")
+
+        self.logger.debug(
+            f"Completed filling report '{report['name']}' to sheet.")
+
+    def compile_all_xls_sheets(self, reports: dict, instructions: dict):
+        self.logger.debug("Starting compile_all_xls_sheets function.")
+
+        # Initialize the workbook and remove any default sheet
+        wb = Workbook()
+        if wb.worksheets:
+            try:
+                wb.remove(wb.worksheets[0])
+                self.logger.debug(
+                    "Removed default worksheet from the workbook.")
+            except AttributeError:
+                wb.remove(wb.worksheets[0])
+                self.logger.debug(
+                    "Removed default worksheet (legacy method) from the workbook.")
+
+        # Add "Buchungen" sheet and populate with bookings data
+        ws = wb.create_sheet("Buchungen")
+        self.logger.debug("Created 'Buchungen' sheet.")
+        self.fill_bookings_to_sheet(reports['bookings'], ws)
+        self.logger.debug("Filled 'Buchungen' sheet with booking data.")
+
+        # Add "Kostenstellen" sheet and populate with cost location data
+        ws = wb.create_sheet("Kostenstellen")
+        self.logger.debug("Created 'Kostenstellen' sheet.")
+        self.fill_costlocations_to_sheet(reports['costlocations'], ws)
+        self.logger.debug(
+            "Filled 'Kostenstellen' sheet with cost location data.")
+
+        # Add "Konten" sheet and populate with account data
+        ws = wb.create_sheet("Konten")
+        self.logger.debug("Created 'Konten' sheet.")
+        self.fill_accounts_to_sheet(reports['accounts'], ws)
+        self.logger.debug("Filled 'Konten' sheet with account data.")
+
+        # Loop through each report in instructions and add relevant sheets
+        report_ids = list(instructions['reports'].keys())
+
+        # save reports dictionary as str( version ) in file for debugging reports.json
+        with open("reports.json", "w") as f:
+            str_reports = {k: str(v) for k, v in reports.items()}
+            f.write(json.dumps(str_reports, indent=4))
+
+        for report_id in report_ids:
+            if report_id in reports:
+                self.logger.debug(f"Creating sheets for report '{report_id}'.")
+
+                # Create main report sheet
+                ws = wb.create_sheet(report_id)
+                self.logger.debug(f"Created main report sheet '{report_id}'.")
+
+                # Create bookings sheet for the report
+                wsb = wb.create_sheet(self.get_bookings_sheet_name(report_id))
+                self.logger.debug(
+                    f"Created bookings sheet for report '{report_id}'.")
+
+                # Create listings sheets if available
+                listings_sheets = []
+                if "listings" in instructions['reports'][report_id]:
+                    for listing in instructions['reports'][report_id]['listings']:
+                        wsl = wb.create_sheet(
+                            self.get_listings_sheet_name(report_id, listing))
+                        listings_sheets.append(wsl)
+                        self.logger.debug(
+                            f"Created listing sheet '{wsl.title}' for report '{report_id}'.")
+
+                # Populate report, bookings, and listings sheets
+                self.fill_report_to_sheet(
+                    reports[report_id], ws, wsb, listings_sheets)
+                self.logger.debug(f"Filled sheets for report '{report_id}'.")
+
+        # Save workbook to a virtual file and return it
+        self.logger.debug("Completed compiling all sheets into the workbook.")
+        return save_virtual_workbook(wb)
+
+    def build_reports(self,
+                      bookings: list,
+                      expected_bookings: list,
+                      instructions: dict,
+                      accounts: list):
+        self.logger.debug("Starting build_reports function.")
+
+        # Initialize the reports dictionary
+        reports = {}
+
+        # Add account information to bookings
+        self.logger.debug("Adding account information to bookings.")
+        self.add_more_account_information_to_bookings(
+            bookings, instructions['kontenrahmen']['default'])
+
+        # Mark each booking as "booked"
+        for booking in bookings:
+            booking['realisation'] = 'booked'
+        reports['bookings'] = bookings
+
+        # Collect accounts and cost locations for reports
+        self.logger.debug("Collecting all accounts.")
+        reports['accounts'] = self.collect_all_accounts(
+            bookings, instructions['kontenrahmen']['default'])
+        self.logger.debug("Collecting all cost locations.")
+        reports['costlocations'] = self.collect_all_costlocations(
+            bookings, instructions['kostenstellenplan'])
+
+        # Build individual reports based on the provided instructions
+        for report_id, report in instructions['reports'].items():
+            self.logger.debug(f"Building report '{report['name']}'.")
+
+            # Add relevant bookings to the report dictionary
+            report_bookings = [
+                booking for booking in bookings if booking['cost_location'] in report['costLocationsStrings']]
+            reports[report_id] = report
+            reports[report_id]['bookings'] = report_bookings
+            self.logger.debug(
+                f"Added {len(report_bookings)} bookings to report '{report['name']}'.")
+
+            # Determine report structure depth
+            report_structure_levels = 0
+            for row in report['rows']:
+                new_depth = self.check_depth(row, 1)
+                report_structure_levels = max(
+                    report_structure_levels, new_depth)
+            report['structureDepth'] = report_structure_levels
+            self.logger.debug(
+                f"Report '{report['name']}' structure depth set to {report_structure_levels}.")
+
+            # Identify saldo rows (top-level groups) and count them
+            saldo_rows = [row for row in report['rows'] if row['type'].lower(
+            ) == "group" and len(row['hierarchyLocation']) == 0]
+            report['numSaldoRows'] = len(saldo_rows)
+            self.logger.debug(
+                f"Report '{report['name']}' has {report['numSaldoRows']} saldo rows.")
+
+            # Add summary information to the report dictionary
+            result = self.add_up_bookings(report_bookings)
+            for key, value in result.items():
+                reports[report_id][key] = value
+            self.logger.debug(
+                f"Added summary information to report '{report['name']}'.")
+
+        # Compile all sheets into a single Excel file
+        reports['allSheetsFile'] = self.compile_all_xls_sheets(
+            reports, instructions)
+        self.logger.debug(
+            "Completed compiling all sheets into a single Excel file.")
+
+        self.logger.debug("Completed building all reports.")
+        return reports
+
+    def get_report_summary(self, report: dict, format='text'):
+        self.logger.debug(
+            f"Starting get_report_summary for report '{report['name']}' with format '{format}'.")
+
+        # Prepare summary content
+        summary = report['name'] + "\n"
+        data = {
+            "expense": "Ausgaben",
+            "revenue": "Einnahmen",
+            "asset": "Activa",
+            "liability": "Verbindlichkeiten",
+            "stock": "Vermögen",
+            "profitAndLoss": "Erfolg"
+        }
+
+        # Append financial data to summary
+        for item, description in data.items():
+            summary += f"{description}: {report.get(item, 'N/A')}\n"
+            # self.logger.debug(f"Added '{description}: {report.get(item, 'N/A')}' to summary.")
+
+        # Append booking count to summary
+        summary += f"Anzahl Buchungen: {len(report.get('bookings', []))}\n"
+        # self.logger.debug(f"Added booking count: {len(report.get('bookings', []))} to summary.")
+
+        # Return the formatted summary
+        return summary
+
+    def send_email_sending(self,
+                           sending: dict,
+                           reports: dict,
+                           send: bool = True):
+        self.logger.debug(
+            f"Starting send_email_sending for recipient '{sending['recipient']}' with {len(sending['packages'])} packages.")
+        self.logger.info(
+            f"Preparing email to {sending['recipient']} with {len(sending['packages'])} packages.")
+
+        email_body = "Report:\n"
+        report_number = 1
+        attachments = []
+        time_zone = timezone("Europe/Berlin")
+        today = time_zone.localize(
+            datetime.datetime.now()).strftime("%Y-%m-%d")
+
+        for package in sending['packages']:
+            required_sheets_for_this_package = []
+
+            # Process each item in the package content
+            for item in package['content']:
+                if package['packageType'] == 'info' and item['type'] == 'reportsummary' and item['scope'] in reports:
+                    content_item = self.get_report_summary(
+                        reports[item['scope']], format='html')
+                    email_body += content_item
+                    self.logger.debug(
+                        f"Added report summary for '{item['scope']}' to email body.")
+
+                elif package['packageType'] == 'excel':
+                    if item['type'] == 'bookings' and item['scope'] == 'all':
+                        required_sheets_for_this_package.append('Buchungen')
+                    elif item['type'] == 'accounts' and item['scope'] == 'all':
+                        required_sheets_for_this_package.append('Konten')
+                    elif item['type'] == 'costlocations' and item['scope'] == 'all':
+                        required_sheets_for_this_package.append(
+                            'Kostenstellen')
+                    elif item['type'] == 'report':
+                        required_sheets_for_this_package.append(item['scope'])
+                        required_sheets_for_this_package.append(
+                            self.get_bookings_sheet_name(item['scope']))
+                        if item['scope'] in reports and "listings" in reports[item['scope']]:
+                            for listing in reports[item['scope']]['listings']:
+                                required_sheets_for_this_package.append(
+                                    self.get_listings_sheet_name(item['scope'], listing))
+                    self.logger.debug(
+                        f"Required sheets for package '{package['packageType']}': {required_sheets_for_this_package}")
+
+            # Attach the relevant sheets
+            if required_sheets_for_this_package:
+                wb = load_workbook(BytesIO(reports['allSheetsFile']))
+                for sheet in wb.sheetnames:
+                    if sheet not in required_sheets_for_this_package:
+                        wb.remove(wb[sheet])
+                self.logger.debug(
+                    f"Filtered workbook to include only required sheets for package {report_number}.")
+
+                # Prepare attachment
+                file_name = f"Financial Report {report_number} {today}.xlsx" if report_number > 1 else f"Financial Report {today}.xlsx"
+                attachment_content = base64.b64encode(
+                    save_virtual_workbook(wb)).decode()
+                attachments.append(Attachment(
+                    FileContent(attachment_content),
+                    FileName(file_name),
+                    FileType('application/xlsx'),
+                    Disposition('attachment')
+                ))
+                report_number += 1
+                self.logger.debug(f"Added attachment '{file_name}' to email.")
+
+        # Set up the email message
+        message = Mail(
+            from_email='hrm@humanrightsmonitor.org',
+            to_emails=sending['recipient'],
+            subject=f'Updated DevInt Administration Report {today}',
+            html_content=email_body
+        )
+        message.attachment = attachments
+
+        # Send the email if `send` is True
+        try:
+            if send:
+                response = self.conn_clients['sendgrid'].send(message)
+                self.logger.info(
+                    f"Mail sent with SendGrid response: {response.status_code}")
+        except Exception as e:
+            self.logger.error(f"Error when trying to send email: {e}")
+
+    def send_teams_sending(self, sending: dict, reports: dict, send: bool = True):
+        self.logger.debug(
+            f"Starting send_teams_sending with {len(sending['packages'])} packages for recipient.")
+
+        # Initialize Teams message
+        message = pymsteams.connectorcard(self.conn_clients["teams_webhook"])
+        message.title("DevInt Accounting Update")
+        text = ""
+
+        # Process each package and build the message text
+        for package in sending['packages']:
+            for item in package['content']:
+                if package['packageType'] == 'info' and item['type'] == 'reportsummary' and item['scope'] in reports:
+                    content_item = self.get_report_summary(
+                        reports[item['scope']], format="html")
+                    text += content_item
+                    self.logger.debug(
+                        f"Added report summary for '{item['scope']}' to Teams message text.")
+
+            # Add process log in HTML format if available
+            # text += self.logger.getloghtml()
+            text += "<br>loging needs to be implemented for teams message<br>"
+
+        # Set the message text and add buttons
+        message.text(text)
+        message.addLinkButton("Request new Report",
+                              self.conn_clients["reportrequest_backlink"])
+        message.addLinkButton("Visit Buchhaltungsbutler",
+                              "https://app.buchhaltungsbutler.de")
+        self.logger.debug("Added links to Teams message.")
+
+        # Send the message if `send` is True
+        if send:
+            try:
+                message.send()
+                self.logger.info("Sent Teams message successfully.")
+            except Exception as e:
+                self.logger.error(
+                    f"Error when trying to send Teams message: {e}")
+
+        self.logger.debug("Completed Teams message sending.")
+
+    def send_azure_blob_sending(self, sending: dict, reports: dict, logger=None, client: dict = None, send: bool = True):
+        self.logger.debug(
+            f"Starting send_azure_blob_sending with {len(sending['packages'])} packages for recipient '{sending['recipient']}'.")
+
+        target = sending['recipient'].split('/')
+        report_number = 1
+
+        self.logger.debug(f"Sending to Azure Blob container '{target}'.")
+        if target[0] == 'devintaccounting':
+            time_zone = timezone("Europe/Berlin")
+            today = time_zone.localize(
+                datetime.datetime.now()).strftime("%Y-%m-%d")
+
+            for package in sending['packages']:
+                required_sheets_for_this_package = []
+
+                # Process each item in the package content
+                for item in package['content']:
+                    if package['packageType'] == 'info' and item['type'] == 'reportsummary' and item['scope'] in reports:
+                        content_item = self.get_report_summary(
+                            reports[item['scope']], format='text')
+                        output = BytesIOWrapper(StringIO(content_item))
+                        file_name = f"Info {report_number} {today}.txt"
+                        if send:
+                            blob_client = self.conn_clients["blob_service"].get_blob_client(
+                                container=target[1], blob=file_name)
+                            blob_client.upload_blob(output, overwrite=True)
+                            self.logger.info(f"Uploaded blob: {file_name}")
+                        report_number += 1
+
+                    elif package['packageType'] == 'info' and item['type'] == 'processlog':
+                        self.logger.warning(
+                            "Sending process log to Azure Blob is not implemented yet.")
+                        # content_item = self.logger.getloglines()
+                        # output = BytesIOWrapper(StringIO(content_item))
+                        # file_name = f"Info {report_number} {today}.txt"
+                        # if send:
+                        #     blob_client = self.conn_clients["blob_service"].get_blob_client(container=target[1], blob=file_name)
+                        #     blob_client.upload_blob(output, overwrite=True)
+                        #     self.logger.info(f"Uploaded blob: {file_name}")
+                        # report_number += 1
+
+                    elif package['packageType'] == 'excel':
+                        if item['type'] == 'bookings' and item['scope'] == 'all':
+                            required_sheets_for_this_package.append(
+                                'Buchungen')
+                        elif item['type'] == 'accounts' and item['scope'] == 'all':
+                            required_sheets_for_this_package.append('Konten')
+                        elif item['type'] == 'costlocations' and item['scope'] == 'all':
+                            required_sheets_for_this_package.append(
+                                'Kostenstellen')
+                        elif item['type'] == 'report':
+                            required_sheets_for_this_package.append(
+                                item['scope'])
+                            required_sheets_for_this_package.append(
+                                self.get_bookings_sheet_name(item['scope']))
+                            if item['scope'] in reports and "listings" in reports[item['scope']]:
+                                for listing in reports[item['scope']]['listings']:
+                                    required_sheets_for_this_package.append(
+                                        self.get_listings_sheet_name(item['scope'], listing))
+                        self.logger.debug(
+                            f"Required sheets for package '{package['packageType']}': {required_sheets_for_this_package}")
+
+                # Attach and upload Excel file if required sheets are present
+                if required_sheets_for_this_package:
+                    wb = load_workbook(BytesIO(reports['allSheetsFile']))
+                    for sheet in wb.sheetnames:
+                        if sheet not in required_sheets_for_this_package:
+                            wb.remove(wb[sheet])
+                    file_name = f"Financial Report {report_number} {today}.xlsx" if report_number > 1 else f"Financial Report {today}.xlsx"
+
+                    try:
+                        if send:
+                            blob_client = self.conn_clients["blob_service"].get_blob_client(
+                                container=target[1], blob=file_name)
+                            blob_client.upload_blob(
+                                BytesIO(save_virtual_workbook(wb)), overwrite=True)
+                            self.logger.info(
+                                f"Uploaded file: {file_name} to Azure Blob.")
+                    except Exception as e:
+                        self.logger.error(f"Error uploading blob: {e}")
+
+                    report_number += 1
+
+        self.logger.debug("Completed Azure Blob sending.")
+
+    def send_cosmosdb_sending(self, sending: dict, reports: dict, send: bool = True):
+        package_count = len(sending['packages'])
+        self.logger.warning(
+            f"Preparing Cosmos DB posting with {package_count} packages. Functionality not yet implemented.")
+
+        # Placeholder for future implementation
+        if send:
+            self.logger.info(
+                "Cosmos DB sending function is currently a placeholder and will not execute any action.")
+
+        return
+
+    def send_reports(self,
+                     reports: dict,
+                     sendings: list,
+                     send: bool = True,
+                     trigger_selector: list = None):
+        self.logger.debug(
+            f"Starting send_reports function with trigger selector: {trigger_selector}.")
+
+        self.logger.debug("Initialized client for sending reports.")
+
+        # Log the beginning of the sending process
+        self.logger.info("Beginning report sending process.")
+
+        for sending in sendings:
+            # Check if sending trigger matches the selector
+            if sending['trigger'] in trigger_selector:
+                self.logger.info(
+                    f"Trigger found in selector, sending report to {sending['recipient']} via {sending['channelType']}, triggered by {sending['trigger']['type']}.")
+
+                # Determine sending channel type and execute corresponding method
+                if sending['channelType'] == 'email':
+                    self.send_email_sending(sending, reports, send=send)
+                elif sending['channelType'] == 'teams':
+                    self.send_teams_sending(sending, reports, send=send)
+                elif sending['channelType'] == 'azureblob':
+                    self.send_azure_blob_sending(sending, reports, send=send)
+                elif sending['channelType'] == 'cosmosdb':
+                    self.send_cosmosdb_sending(sending, reports, send=send)
+                else:
+                    # Log error for unknown channel type
+                    self.logger.error(
+                        f"Unknown channel type: {sending['channelType']}")
+
+        # Log completion of the sending process
+        self.logger.info("Completed sending reports.")
+        self.logger.debug("Finished send_reports function.")
