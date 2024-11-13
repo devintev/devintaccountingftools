@@ -1,7 +1,10 @@
 import logging
 import yaml
 import os
+import re
 import datetime
+from io import StringIO, BytesIO
+import pandas as pd
 from azure.keyvault.secrets import SecretClient
 from azure.functions import HttpRequest
 from azure.identity import DefaultAzureCredential
@@ -547,7 +550,7 @@ class DevIntConnector:
             return None
 
         # Clients Dictionary
-        conn_clients = {
+        self.conn_clients = {
             "blob_service": blob_service_client,
             "templates_folder": blob_service_client.get_container_client(container=templates_container_name),
             "financialplanning_folder": blob_service_client.get_container_client(container=financialplanning_container_name),
@@ -565,8 +568,7 @@ class DevIntConnector:
             "bb_cookie": bb_cookie,
             "db": db
         }
-
-        return conn_clients
+        return self.conn_clients
 
     def analyse_received_http_request(self, http_request):
 
@@ -586,7 +588,7 @@ class DevIntConnector:
         post_data = {}
         if http_request.method == "POST":
             post_data_raw = http_request.get_body().decode("utf-8").split('&')
-            case_tag_options = []
+            # case_tag_options = []
             if post_data_raw and post_data_raw[0]:
                 for post_data_item in post_data_raw:
                     post_data_item_parts = post_data_item.split('=')
@@ -596,3 +598,616 @@ class DevIntConnector:
             post_data = dict(http_request.params)
         self.logger.log(f"received data with method: {data['method']}<br>")
         return post_data
+
+    def download_all_sheets(self, blob_client):
+        self.logger.debug(
+            f"Starting download_all_sheets from {blob_client.container_name}/{blob_client.blob_name}.")
+
+        try:
+            # Initiate download stream
+            self.logger.debug("Initializing blob download stream...")
+            stream = BytesIO()
+            blob_downloader = blob_client.download_blob()
+
+            # Download blob data to stream
+            blob_downloader.download_to_stream(stream)
+            self.logger.debug(
+                "Blob downloaded successfully into memory stream.")
+
+            # Load Excel data from stream
+            get_blob_data = pd.ExcelFile(stream, engine='openpyxl')
+            self.logger.debug(
+                f"Excel file loaded. Sheets found: {get_blob_data.sheet_names}")
+
+            # Process each sheet and store in dictionary
+            dataframes = {}
+            for sheet in get_blob_data.sheet_names:
+                # self.logger.debug(f"start processing sheet: {sheet}")
+                new_df = pd.read_excel(
+                    get_blob_data, engine='openpyxl', sheet_name=sheet)
+                dataframes[sheet] = new_df
+                # self.logger.debug(
+                #     f"Sheet '{sheet}' read into DataFrame with {new_df.shape[0]} rows and {new_df.shape[1]} columns.")
+
+            # self.logger.info(
+            #     "All sheets downloaded and processed successfully.")
+            return dataframes
+
+        except Exception as e:
+            self.logger.error(f"Error in download_all_sheets: {e}")
+            raise
+
+    def read_time_slots(self, df: pd.DataFrame):
+        self.logger.debug("Starting read_time_slots function.")
+
+        try:
+            # Drop empty rows and log the result
+            time_slots_df = df.dropna(how='all')
+            self.logger.debug(
+                f"Dropped empty rows. Remaining rows: {len(time_slots_df)}")
+
+            # Rename columns and log the new column names
+            rename_list = {'Slot Start': 'start', 'Slot End': 'end',
+                           'Slot Title': 'name', 'Slot ID': 'id'}
+            time_slots_df = time_slots_df.rename(
+                columns=rename_list, inplace=False)
+            self.logger.debug(f"Columns renamed: {rename_list}")
+
+            # Initialize dictionary to store results
+            dict_list = {}
+            self.logger.debug(
+                "Processing each row to extract time slot information.")
+
+            for time_slot_ID in time_slots_df.index:
+                mdict = time_slots_df.loc[time_slot_ID].to_dict()
+                # self.logger.debug(f"Processing time slot ID: {time_slot_ID}")
+
+                # Convert start and end to strings and store
+                if pd.notnull(mdict.get('start')) and pd.notnull(mdict.get('end')):
+                    mdict['startString'] = mdict['start'].strftime('%d.%m.%Y')
+                    mdict['endString'] = mdict['end'].strftime('%d.%m.%Y')
+                else:
+                    self.logger.warning(
+                        f"Missing start or end date for time slot ID {time_slot_ID}. Skipping conversion.")
+
+                # Store time slot information in dictionary
+                dict_list[str(mdict['id'])] = mdict
+
+            self.logger.info("All time slots processed successfully.")
+            return dict_list
+
+        except Exception as e:
+            self.logger.error(f"Error in read_time_slots: {e}")
+            raise
+
+    def read_kontenrahmen(self, dfs: dict):
+        self.logger.debug("Starting read_kontenrahmen function.")
+
+        try:
+            # Initialize kontenrahmen dictionary to store processed data
+            kontenrahmen = {}
+            self.logger.debug(
+                f"Processing {len(dfs)} dataframes for 'kontenrahmen'.")
+
+            for key, df in dfs.items():
+                self.logger.debug(f"Processing dataframe with key: {key}")
+                entries = []
+
+                for index in df.index:
+                    mdict = df.loc[index].to_dict()
+
+                    # Construct entry dictionary with required fields
+                    entry = {
+                        'accountRangeStart': mdict.get('Start'),
+                        'accountRangeEnd': mdict.get('Ende'),
+                        'type1': mdict.get('Typ 1'),
+                        'type2': mdict.get('Typ 2')
+                    }
+
+                    # Check and add optional categories if they are present
+                    if not pd.isna(mdict.get('Kategorie 1')):
+                        entry['category1'] = mdict['Kategorie 1']
+                    if not pd.isna(mdict.get('Kategorie 2')):
+                        entry['category2'] = mdict['Kategorie 2']
+                    if not pd.isna(mdict.get('Kategorie 3')):
+                        entry['category3'] = mdict['Kategorie 3']
+                    entries.append(entry)
+
+                # Store entries list in kontenrahmen dictionary with a modified key name
+                kontenrahmen[key[13:]] = entries
+                self.logger.debug(
+                    f"Processed {len(entries)} entries for key '{key[13:]}'.")
+
+            # Set a default kontenrahmen entry
+            kontenrahmen['default'] = kontenrahmen[list(
+                kontenrahmen.keys())[0]]
+            self.logger.debug(
+                "Default kontenrahmen set to the first processed entry.")
+
+            self.logger.info(
+                "Completed processing all dataframes for 'kontenrahmen'.")
+            return kontenrahmen
+
+        except Exception as e:
+            self.logger.error(f"Error in read_kontenrahmen: {e}")
+            raise
+
+    def read_kostenstellenplan(self, df: pd.DataFrame):
+        self.logger.debug("Starting read_kostenstellenplan function.")
+
+        try:
+            # Initialize costlocations dictionary to store processed data
+            costlocations = {}
+
+            # Drop empty rows and rename relevant columns
+            ksp_df = df.dropna(how='all')
+            self.logger.info(
+                f"Dropped empty rows. Remaining rows: {len(ksp_df)}")
+            ksp_df = ksp_df.rename(
+                columns={
+                    'Unnamed: 5': 'sectionname', 'Unnamed: 6': 'groupName',
+                    'Unnamed: 7': 'subGroupName', 'Unnamed: 8': 'name', 'Unnamed: 9': 'type'
+                },
+                inplace=False
+            )
+            # self.logger.debug("Renamed columns as per mapping.")
+
+            # Drop rows missing key identifier
+            ksp_df = ksp_df.dropna(subset=['Unnamed: 1'])
+            max_costlocation_digits = 4
+            self.logger.info("Starting to process each row in the dataframe.")
+
+            for ksp_df_index in ksp_df.index:
+                item = {"limits": {}}
+                mdict = ksp_df.loc[ksp_df_index].to_dict()
+                # self.logger.debug(f"Processing row at index {ksp_df_index}")
+
+                # Determine item type based on type column
+                if not pd.isna(mdict['type']):
+                    if mdict['type'] in ['income', 'Einnahmen']:
+                        item['type'] = 'income'
+                    elif mdict['type'] in ['expense', 'Ausgaben']:
+                        item['type'] = 'expense'
+                    elif mdict['type'] == 'budget':
+                        item['type'] = 'budget'
+                    # self.logger.debug(f"Set item type for index {ksp_df_index}: {item['type']}")
+
+                # Process limits
+                if not pd.isna(mdict.get('Unnamed: 10')):
+                    item['limits']['max'] = float(mdict['Unnamed: 10'])
+                    # self.logger.debug(f"Set max limit for index {ksp_df_index}: {item['limits']['max']}")
+                if not pd.isna(mdict.get('Unnamed: 11')):
+                    item['limits']['extendedMax'] = float(mdict['Unnamed: 11'])
+                    # self.logger.debug(f"Set extended max limit for index {ksp_df_index}: {item['limits']['extendedMax']}")
+
+                # Handle group items
+                if not pd.isna(mdict.get('groupName')) or not pd.isna(mdict.get('subGroupName')):
+                    item['type'] = 'group'
+                    item['name'] = mdict['subGroupName'] if not pd.isna(
+                        mdict.get('subGroupName')) else mdict['groupName']
+                    # self.logger.debug(f"Set item as group with name '{item['name']}'")
+
+                    # Construct the ID and range of the cost location
+                    starting_digits = "".join(str(int(mdict[col])) for col in [
+                                              'Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3'] if not pd.isna(mdict[col]))
+                    min_digits = starting_digits + '0' * \
+                        (max_costlocation_digits - len(starting_digits))
+                    max_digits = starting_digits + '9' * \
+                        (max_costlocation_digits - len(starting_digits))
+
+                    item.update({
+                        'id': starting_digits,
+                        'costLocations': {
+                            'startingDigits': starting_digits,
+                            'min': int(min_digits),
+                            'max': int(max_digits)
+                        },
+                        'children': {}
+                    })
+                    costlocations[item['id']] = item
+                    # self.logger.debug(f"Group item with ID '{item['id']}' has range {min_digits} - {max_digits}")
+
+                # Handle individual items
+                elif not pd.isna(mdict.get('name')):
+                    item['type'] = 'item'
+                    item['name'] = mdict['name']
+                    digits = "".join(str(int(mdict[col])) for col in [
+                                     'Unnamed: 0', 'Unnamed: 1', 'Unnamed: 2', 'Unnamed: 3'] if not pd.isna(mdict[col]))
+                    item['number'] = int(digits)
+                    item['id'] = digits
+                    costlocations[item['id']] = item
+                    # self.logger.debug(f"Item with ID '{item['id']}' and name '{item['name']}' added.")
+
+            # Assign children to groups based on their ranges
+            self.logger.debug(
+                "Assigning children to groups based on cost location ranges.")
+            for id, item in costlocations.items():
+                if item['type'] == 'group':
+                    for child_id, child_item in costlocations.items():
+                        if child_item['type'] == 'item' and item['costLocations']['min'] <= child_item['number'] <= item['costLocations']['max']:
+                            item['children'][child_id] = child_item
+                            # self.logger.debug(f"Added item '{child_id}' as a child of group '{id}'")
+                        elif child_item['type'] == 'group' and child_id != id and item['costLocations']['min'] <= child_item['costLocations']['min'] and item['costLocations']['max'] >= child_item['costLocations']['max']:
+                            item['children'][child_id] = child_item
+                            # self.logger.debug(f"Added group '{child_id}' as a subgroup of '{id}'")
+
+            self.logger.info("Completed processing kostenstellenplan.")
+            return costlocations
+
+        except Exception as e:
+            self.logger.error(f"Error in read_kostenstellenplan: {e}")
+            raise
+
+    def read_reports_overview(self, df: pd.DataFrame):
+        self.logger.debug("Starting read_reports_overview function.")
+
+        # Initialize dictionary to store reports and counter for ignored reports
+        reports = {}
+        ignored_reports = 0
+        self.logger.debug("Processing report entries in the dataframe.")
+
+        for report_ID in df.index:
+            mdict = df.loc[report_ID].to_dict()
+            report = {
+                'id': mdict["Plan"],
+                'name': mdict['Name'],
+                'costLocationsRange': {
+                    'min': mdict['Kostenstellenstart'],
+                    'max': mdict['Kostenstellenende']
+                }
+            }
+
+            # Include only reports with version 2
+            if mdict['Version'] == 2:
+                reports[mdict["Plan"]] = report
+                self.logger.debug(
+                    f"Added report with ID '{report['id']}' and name '{report['name']}'.")
+            else:
+                ignored_reports += 1
+                self.logger.debug(
+                    f"Ignored report with ID '{report['id']}' due to deprecated version.")
+
+        # Log ignored reports if any
+        if ignored_reports > 0:
+            self.logger.warning(
+                f"{ignored_reports} report plans were not read because of their deprecated version.")
+
+        self.logger.debug("Completed processing all report entries.")
+        return reports
+
+    def read_report_schema_into(self, report: dict, schema_df: pd.DataFrame, time_slot_templates: dict):
+        self.logger.debug("Starting read_report_schema_into function.")
+
+        try:
+            # Clean the DataFrame by dropping empty rows and columns
+            schema_df.dropna(how='all', inplace=True)
+            schema_df.dropna(axis=1, how="all", inplace=True)
+            self.logger.debug(
+                "Dropped empty rows and columns from schema DataFrame.")
+
+            # Identify slot columns and section columns
+            slot_columns = [
+                col for col in schema_df.columns if col.startswith('s:')]
+            slot_names = [col.split(':')[1] for col in slot_columns]
+            section_column_names = [
+                col for col in schema_df.columns if col.startswith('Section ')]
+            self.logger.debug(
+                f"Found {len(slot_columns)} slot columns and {len(section_column_names)} section columns.")
+
+            # Process slot data
+            slots_data = []
+            listings_data = []
+            order_number = 0
+            for slot_column in slot_columns:
+                slot_data = {
+                    'timeSlotId': slot_column.split(':')[1],
+                    'buildListing': len(slot_column.split(':')) > 2 and slot_column.split(':')[2] == "listing",
+                    'orderNumber': order_number
+                }
+                order_number += 1
+
+                # Adjust slot ID if necessary and retrieve slot info
+                if re.findall(r'\.\d$', slot_data['timeSlotId']) and slot_data['timeSlotId'][:-2] in slot_names:
+                    slot_data['timeSlotId'] = slot_data['timeSlotId'][:-2]
+                slot_template = time_slot_templates.get(
+                    slot_data['timeSlotId'], {})
+                slot_data.update({
+                    'name': slot_template.get('name'),
+                    'start': slot_template.get('start'),
+                    'end': slot_template.get('end')
+                })
+                slots_data.append(slot_data)
+                if slot_data['buildListing']:
+                    listings_data.append(slot_data)
+                # self.logger.debug(f"Processed slot column '{slot_column}' with order number {slot_data['orderNumber']}.")
+
+            report['slots'] = slots_data
+            report['numberSectionLevels'] = len(section_column_names)
+
+            # Process items in schema
+            items = []
+            order_number = 0
+            for row_id in schema_df.index:
+                mdict = schema_df.loc[row_id].to_dict()
+                item = {'orderNumber': order_number}
+                order_number += 1
+                hierarchy_location = [
+                    mdict[col] for col in section_column_names if not pd.isna(mdict[col])
+                ]
+                item['hierarchyLocation'] = hierarchy_location
+
+                # Populate item details based on type
+                item['name'] = mdict.get('Name', '') if not pd.isna(
+                    mdict.get('Name')) else ''
+                item['type'] = mdict['Type'].lower() if mdict['Type'].lower() in [
+                    'income', 'expense', 'group'] else 'unknown'
+
+                if item['type'] in ['expense', 'income']:
+                    cost_loc_str = mdict['Cost Location'] if isinstance(
+                        mdict['Cost Location'], str) else f"{int(mdict['Cost Location']):04d}"
+                    item['costLocationsStrings'] = cost_loc_str.split(',')
+                    item['costLocations'] = [
+                        int(cl) for cl in item['costLocationsStrings']]
+                    item['hierarchyLocation'].append(item['name'])
+                elif item['type'] == 'group' and hierarchy_location:
+                    item['name'] = hierarchy_location[-1]
+
+                # Process slot-specific info
+                slots_info = []
+                for report_slot in report['slots']:
+                    row_slot_info = {
+                        'timeSlotId': report_slot['timeSlotId'],
+                        'buildListing': report_slot['buildListing'],
+                        'slotDetails': report_slot,
+                        'orderNumber': report_slot['orderNumber']
+                    }
+                    column_name = f"s:{report_slot['timeSlotId']}"
+                    if row_slot_info['buildListing']:
+                        column_name += ":listing"
+
+                    # Parse values and set type/limits
+                    value = mdict.get(column_name)
+                    if not pd.isna(value):
+                        if isinstance(value, str):
+                            row_slot_info['type'] = 'sum' if value.lower() in ['fieldsum', 'cellsum', 'sum', 'summe'] else 'bookings' if value.lower() in [
+                                'bookings', 'buchungen'] else 'budget'
+                            if ':' in value:
+                                limit, *extra = value.split(':')
+                                row_slot_info['limit'] = float(limit)
+                                row_slot_info['limitType'] = 'absolute' if extra and extra[0] == '!' else 'exceedable' if extra and extra[0].startswith(
+                                    '+') else 'relative'
+                                if extra and extra[0].startswith('+') and extra[0].endswith('%'):
+                                    row_slot_info['extendedLimit'] = row_slot_info['limit'] * (
+                                        1.0 + float(extra[0][1:-1]) / 100.0)
+                        elif isinstance(value, (int, float)):
+                            row_slot_info.update(
+                                {'type': 'budget', 'limit': float(value), 'limitType': 'relative'})
+                    else:
+                        row_slot_info.update(
+                            {'type': 'empty', 'limit': 0.0, 'limitType': 'relative'})
+
+                    slots_info.append(row_slot_info)
+                    # self.logger.debug(f"Processed slot info for item {item['name']} with slot ID '{report_slot['timeSlotId']}'.")
+
+                item['slots'] = slots_info
+                items.append(item)
+
+            # Collect cost locations and strings
+            report['costLocations'] = list({loc for i in items if i['type'] in [
+                                           'expense', 'income'] for loc in i['costLocations']})
+            report['costLocationsStrings'] = list({str for i in items if i['type'] in [
+                                                  'expense', 'income'] for str in i['costLocationsStrings']})
+
+            # Assign children to groups
+            for row in items:
+                if row['type'] == 'group':
+                    row['children'] = [
+                        item for item in items
+                        if len(item['hierarchyLocation']) == len(row['hierarchyLocation']) + 1
+                        and item['hierarchyLocation'][:-1] == row['hierarchyLocation']
+                    ]
+                    # if row['children']:
+                    #     self.logger.debug(f"Assigned {len(row['children'])} children to group '{row['name']}'.")
+
+            report['rows'] = items
+            if listings_data:
+                report['listings'] = listings_data
+            self.logger.debug("Completed processing report schema.")
+
+        except Exception as e:
+            self.logger.error(f"Error in read_report_schema_into: {e}")
+            raise
+
+    def read_distribution_instructions(self, df: pd.DataFrame):
+        self.logger.debug("Starting read_distribution_instructions function.")
+
+        try:
+            # Initialize distribution list
+            dist = []
+            self.logger.debug("Processing each row in the dataframe.")
+
+            for row_id in df.index:
+                mdict = df.loc[row_id].to_dict()
+                entry = {'channelType': mdict['type'], 'packages': []}
+                # self.logger.debug(
+                #     f"Processing distribution entry with channel type '{mdict['type']}'.")
+
+                # Check and add recipient if available
+                if not pd.isna(mdict.get('recipient')):
+                    entry['recipient'] = mdict['recipient']
+                    # self.logger.debug(f"Added recipient: {entry['recipient']}")
+
+                # Process trigger information if available
+                if not pd.isna(mdict.get('trigger')):
+                    trigger_parts = mdict['trigger'].split(':')
+                    entry['trigger'] = {'type': trigger_parts[0].strip()}
+                    if len(trigger_parts) > 1:
+                        entry['trigger']['condition'] = trigger_parts[1].strip()
+                    # self.logger.debug(f"Added trigger: {entry['trigger']}")
+
+                # Process content information
+                if not pd.isna(mdict.get('content')):
+                    content = mdict['content'].split('),')
+                    # self.logger.debug(
+                    #     f"Processing content for entry with {len(content)} content items.")
+
+                    for item in content:
+                        # Parse job type and job list
+                        subitems = item.split('(')
+                        job_type = subitems[0].strip().lower()
+                        job_list_raw = subitems[1].rstrip(')') if len(
+                            subitems) > 1 else ""
+                        content_items = []
+
+                        # Parse individual jobs within the job list
+                        for job in job_list_raw.split(','):
+                            job_parts = job.split(':')
+                            if len(job_parts) == 2:
+                                citem = {'type': job_parts[0].strip(
+                                ), 'scope': job_parts[1].strip()}
+                                content_items.append(citem)
+                                # self.logger.debug(
+                                #     f"Added content item: {citem}")
+                            else:
+                                self.logger.warning(
+                                    f"Invalid job format in content item: '{job}'")
+
+                        # Append processed package to entry packages
+                        entry['packages'].append(
+                            {'packageType': job_type, 'content': content_items})
+                        self.logger.debug(
+                            f"Added package '{job_type}' with {len(content_items)} content items to entry.")
+
+                # Append completed entry to the distribution list
+                dist.append(entry)
+                self.logger.debug(
+                    f"Completed processing entry with channel type '{mdict['type']}'.")
+
+            self.logger.debug(
+                "Completed processing all distribution instructions.")
+            return dist
+
+        except Exception as e:
+            self.logger.error(f"Error in read_distribution_instructions: {e}")
+            raise
+
+    def read_instruction_files(self, container=None):
+        self.logger.debug("Starting read_instruction_files function.")
+
+        # Determine container
+        container = container or self.conn_clients["templates_folder"]
+        self.logger.debug(f"Using container: {container.container_name}")
+
+        # Initialize instructions structure
+        instructions = {
+            "sheets": {},
+            "unprocessedSheets": {},
+            "processedSheets": {}
+        }
+
+        # List and process blobs in container
+        self.logger.debug("Listing blobs in container...")
+        instruction_files_list = container.list_blobs()
+        file_count = 0
+
+        for instruction_file in instruction_files_list:
+            file_count += 1
+            blob_client = container.get_blob_client(instruction_file.name)
+            self.logger.debug(f"Processing file {instruction_file.name}")
+
+            # Process only .xlsx files
+            if instruction_file.name.endswith(".xlsx"):
+                self.logger.debug(
+                    f"Identified Excel file: {instruction_file.name}")
+                dataframes = self.download_all_sheets(blob_client)
+                for key, df in dataframes.items():
+                    instructions["sheets"][key] = df
+                    instructions["unprocessedSheets"][key] = df
+
+        if file_count == 0:
+            self.logger.warning("No files found in the container.")
+        else:
+            self.logger.info(
+                f"Total instruction files processed: {file_count}")
+
+        # Time Slots
+        if "Time Slots" in instructions["unprocessedSheets"]:
+            self.logger.debug("Found 'Time Slots' sheet.")
+            instructions["timeSlotTemplates"] = self.read_time_slots(
+                instructions["unprocessedSheets"]["Time Slots"]
+            )
+            instructions["processedSheets"]["Time Slots"] = instructions["unprocessedSheets"]["Time Slots"]
+            del instructions["unprocessedSheets"]["Time Slots"]
+        else:
+            self.logger.error("No 'Time Slots' sheet found in any Excel file.")
+
+        # Kontenrahmen
+        kontenrahmen = {k: v for k, v in instructions["unprocessedSheets"].items(
+        ) if k.startswith('Kontenrahmen ')}
+        if kontenrahmen:
+            self.logger.info(
+                f"Found {len(kontenrahmen)} 'Kontenrahmen' sheets.")
+            instructions["kontenrahmen"] = self.read_kontenrahmen(kontenrahmen)
+            instructions["processedSheets"].update(kontenrahmen)
+            for key in kontenrahmen:
+                del instructions["unprocessedSheets"][key]
+        else:
+            self.logger.error(
+                "No 'Kontenrahmen' sheet found in any Excel file.")
+
+        # Kostenstellenplan
+        if "Kostenstellenplan" in instructions["unprocessedSheets"]:
+            self.logger.info("Found 'Kostenstellenplan' sheet.")
+            instructions["kostenstellenplan"] = self.read_kostenstellenplan(
+                instructions["unprocessedSheets"]["Kostenstellenplan"]
+            )
+            instructions["processedSheets"]["Kostenstellenplan"] = instructions["unprocessedSheets"]["Kostenstellenplan"]
+            del instructions["unprocessedSheets"]["Kostenstellenplan"]
+        else:
+            self.logger.error(
+                "No 'Kostenstellenplan' sheet found in any Excel file.")
+
+        # Reports Overview
+        if "Reports Overview" in instructions["unprocessedSheets"]:
+            self.logger.info("Found 'Reports Overview' sheet.")
+            # Uncomment below if reports overview processing is needed
+            instructions["reports"] = self.read_reports_overview(
+                instructions["unprocessedSheets"]["Reports Overview"]
+            )
+            instructions["processedSheets"]["Reports Overview"] = instructions["unprocessedSheets"]["Reports Overview"]
+            del instructions["unprocessedSheets"]["Reports Overview"]
+        else:
+            self.logger.error(
+                "No 'Reports Overview' sheet found in any Excel file.")
+
+        # Budget Plans
+        if "reports" in instructions:
+            self.logger.info("Processing reports for budget plans.")
+            for key, report in instructions['reports'].items():
+                sheet_name = f"Budget Plan {key}"
+                if sheet_name in instructions["unprocessedSheets"]:
+                    self.read_report_schema_into(
+                        report, instructions["unprocessedSheets"][sheet_name], instructions["timeSlotTemplates"]
+                    )
+                    instructions["processedSheets"][sheet_name] = instructions["unprocessedSheets"][sheet_name]
+                    del instructions["unprocessedSheets"][sheet_name]
+                else:
+                    self.logger.warning(
+                        f"Budget Plan {key} not found in unprocessed sheets.")
+        else:
+            self.logger.error(
+                "No 'reports' key found in instructions dictionary.")
+
+        # Flow Plan
+        if "Flow Plan" in instructions["unprocessedSheets"]:
+            self.logger.info("Found 'Flow Plan' sheet.")
+            instructions["distribution"] = self.read_distribution_instructions(
+                instructions["unprocessedSheets"]["Flow Plan"]
+            )
+            instructions["processedSheets"]["Flow Plan"] = instructions["unprocessedSheets"]["Flow Plan"]
+            del instructions["unprocessedSheets"]["Flow Plan"]
+        else:
+            self.logger.error("No 'Flow Plan' sheet found in any Excel file.")
+
+        self.logger.info("Completed reading instruction files.")
+        return instructions
