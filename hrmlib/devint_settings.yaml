@@ -38,10 +38,10 @@ depth1Font:
   bold: true
   size: 12
 
-azure_blob_storage_account_name: "devintaccounting"
 cosmos_db_url: "https://devintaccountingdb.documents.azure.com:443/"
 cosmos_db_id: "WorkingHoursAccounting"
 
+azure_blob_storage_account_name: "devintaccountingftools"
 blob_containers:
   templates: "templates"
   financialplanning: "financialplanning"
