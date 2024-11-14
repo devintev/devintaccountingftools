@@ -1,13 +1,7 @@
 import azure.functions as func
 import logging
 from json2html import json2html
-# import traceback
 import sys
-import os
-# import json
-from datetime import datetime
-
-from libraries import common, DLogger
 
 from hrmlib.hrmtools import (
     SecretsAndSettingsManager, HTMLListHandler,
@@ -54,7 +48,7 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
     replace_data = {
         "help_info": "",
         "messages": "",
-        "main_content": f"<h1>Called Function</h1>",
+        "main_content": "<h1>Called Function</h1>",
         "log_level_num": "info",
     }
     dc = DevIntConnector(parent_logger=logger,
@@ -64,7 +58,7 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
     dc.setup(config)
     # data = dc.analyse_received_http_request(req)
 
-    function_app_url = config.get_function_app_url()
+    # function_app_url = config.get_function_app_url()
 
     selectors = []
     if 'coordination' in http_vars and http_vars['coordination'] == 1:

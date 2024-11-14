@@ -19,10 +19,6 @@ bookingsHeaderWidth:
   currency: 5
   vat: 5
   credit_type: 5
-depth1Font:
-  name: 'Cambria'
-  bold: true
-  size: 12
 
 euroFormat : '#0 €' 
 euroFormatPrecise : '#,##0.00 €'
@@ -32,6 +28,35 @@ bookingsDateColumnHeader : 'date'
 bookingsAmountColumnHeader : 'amount'
 bookingsDebitBookingsType2 : 'debit_booking_type_2'
 bookingsCreditBookingsType2 : 'credit_booking_type_2'
+
+expense_term : "Ausgaben"
+income_term : "Einnahmen"
+
+keep_personnel_columns:
+  - booking_number
+  - date
+  - cost_location
+  - postingtext
+  - amount
+  - credit_type
+  - debit_postingaccount_number
+  - debit_booking_type_1
+  - debit_booking_type_2
+  - debit_booking_categories
+  - credit_postingaccount_number
+  - credit_booking_type_1
+  - credit_booking_type_2
+  - credit_booking_categories
+  - transaction_purpose
+  - transaction_id_by_customer
+  - transactions_purpose
+  - realisation
+
+personnel_monthly_sum_columns:
+  - '1700'
+  - '1705'
+  - '1712'
+  - '1730'
 
 cosmos_db_url: "https://devintaccountingdb.documents.azure.com:443/"
 cosmos_db_id: "WorkingHoursAccounting"
