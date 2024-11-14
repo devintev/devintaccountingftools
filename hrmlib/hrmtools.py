@@ -2498,11 +2498,6 @@ class DevIntConnector:
         # Loop through each report in instructions and add relevant sheets
         report_ids = list(instructions['reports'].keys())
 
-        # save reports dictionary as str( version ) in file for debugging reports.json
-        with open("reports.json", "w") as f:
-            str_reports = {k: str(v) for k, v in reports.items()}
-            f.write(json.dumps(str_reports, indent=4))
-
         for report_id in report_ids:
             if report_id in reports:
                 self.logger.debug(f"Creating sheets for report '{report_id}'.")
