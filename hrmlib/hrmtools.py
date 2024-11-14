@@ -1,4 +1,146 @@
-# last updated 2024-11-13
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                      ★ DEPENDENCY GRAPH ★                    ║
+# ║                     BEGIN DEPENDENCY GRAPH                   ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# ========== [ Class: BytesIOWrapper ] ==========
+# BytesIOWrapper.__init__ ( <- 0 x)
+# BytesIOWrapper.__getattr__ ( <- 0 x)
+# BytesIOWrapper.read ( <- 1 x)
+#   -> BytesIOWrapper.read
+# BytesIOWrapper.write ( <- 1 x)
+#   -> BytesIOWrapper.write
+
+# ========== [ Class: SecretsAndSettingsManager ] ==========
+# SecretsAndSettingsManager.__init__ ( <- 0 x)
+# SecretsAndSettingsManager.get_secret ( <- 1 x)
+#   -> SecretsAndSettingsManager.get_secret
+# SecretsAndSettingsManager.get_function_app_url ( <- 0 x)
+
+# ========== [ Class: HTMLListHandler ] ==========
+# HTMLListHandler.__init__ ( <- 1 x)
+#   -> HTMLListHandler.__init__
+# HTMLListHandler.emit ( <- 0 x)
+# HTMLListHandler.get_html_log ( <- 0 x)
+
+# ========== [ Class: DevIntConnector ] ==========
+# DevIntConnector.__init__ ( <- 0 x)
+# DevIntConnector._colchar ( <- 7 x)
+# DevIntConnector._check_depth ( <- 3 x)
+#   -> DevIntConnector._check_depth
+# DevIntConnector.load_settings ( <- 0 x)
+# DevIntConnector.get_settings ( <- 0 x)
+# DevIntConnector.set_key_vault_access ( <- 1 x)
+# DevIntConnector.setup ( <- 0 x)
+#   -> DevIntConnector.set_key_vault_access
+# DevIntConnector.build_clients ( <- 0 x)
+# DevIntConnector.analyse_received_http_request ( <- 0 x)
+# DevIntConnector.download_all_sheets ( <- 2 x)
+# DevIntConnector.read_time_slots ( <- 1 x)
+# DevIntConnector.read_kontenrahmen ( <- 1 x)
+# DevIntConnector.read_kostenstellenplan ( <- 1 x)
+# DevIntConnector.read_reports_overview ( <- 1 x)
+# DevIntConnector.read_report_schema_into ( <- 1 x)
+# DevIntConnector.read_distribution_instructions ( <- 1 x)
+# DevIntConnector.read_instruction_files ( <- 0 x)
+#   -> DevIntConnector.read_time_slots
+#   -> DevIntConnector.read_kontenrahmen
+#   -> DevIntConnector.read_kostenstellenplan
+#   -> DevIntConnector.read_reports_overview
+#   -> DevIntConnector.read_distribution_instructions
+#   -> DevIntConnector.download_all_sheets
+#   -> DevIntConnector.read_report_schema_into
+# DevIntConnector.get_all_bb_posts ( <- 0 x)
+# DevIntConnector.get_all_bb_accounts ( <- 0 x)
+# DevIntConnector.read_expected_bookings ( <- 0 x)
+#   -> DevIntConnector.download_all_sheets
+# DevIntConnector.add_more_account_information_to_bookings ( <- 1 x)
+# DevIntConnector.collect_all_accounts ( <- 1 x)
+# DevIntConnector.add_up_bookings ( <- 2 x)
+# DevIntConnector.collect_all_costlocations ( <- 1 x)
+#   -> DevIntConnector.add_up_bookings
+# DevIntConnector.fill_bookings_to_sheet ( <- 2 x)
+#   -> DevIntConnector._colchar
+# DevIntConnector.fill_costlocations_to_sheet ( <- 1 x)
+# DevIntConnector.fill_accounts_to_sheet ( <- 1 x)
+# DevIntConnector.get_bookings_sheet_name ( <- 4 x)
+# DevIntConnector.get_listings_sheet_name ( <- 4 x)
+# DevIntConnector.fill_report_row_to_listings_sheet ( <- 1 x)
+# DevIntConnector.select_bookings_by_costlocation ( <- 1 x)
+# DevIntConnector.fill_listings_sheet ( <- 1 x)
+#   -> DevIntConnector._colchar
+#   -> DevIntConnector._check_depth
+#   -> DevIntConnector.select_bookings_by_costlocation
+#   -> DevIntConnector.fill_report_row_to_listings_sheet
+# DevIntConnector.fill_bookings_listings_sheet ( <- 0 x)
+# DevIntConnector._add_slot_header ( <- 1 x)
+#   -> DevIntConnector._colchar
+# DevIntConnector.build_group_summation_formula ( <- 1 x)
+#   -> DevIntConnector._colchar
+# DevIntConnector._get_column_letter_by_column_header ( <- 1 x)
+# DevIntConnector.fill_row_to_sheet ( <- 1 x)
+#   -> DevIntConnector.get_bookings_sheet_name
+#   -> DevIntConnector.build_group_summation_formula
+#   -> DevIntConnector._get_column_letter_by_column_header
+#   -> DevIntConnector._colchar
+# DevIntConnector._set_border_to_area ( <- 1 x)
+# DevIntConnector.fill_report_to_sheet ( <- 1 x)
+#   -> DevIntConnector.fill_bookings_to_sheet
+#   -> DevIntConnector._add_slot_header
+#   -> DevIntConnector._colchar
+#   -> DevIntConnector.fill_row_to_sheet
+#   -> DevIntConnector._set_border_to_area
+#   -> DevIntConnector.get_listings_sheet_name
+#   -> DevIntConnector.fill_listings_sheet
+# DevIntConnector.fill_personnel_bookings_to_sheet ( <- 1 x)
+#   -> DevIntConnector._colchar
+# DevIntConnector.build_personnel_bookings ( <- 1 x)
+# DevIntConnector.compile_all_xls_sheets ( <- 1 x)
+#   -> DevIntConnector.fill_bookings_to_sheet
+#   -> DevIntConnector.fill_costlocations_to_sheet
+#   -> DevIntConnector.fill_accounts_to_sheet
+#   -> DevIntConnector.fill_personnel_bookings_to_sheet
+#   -> DevIntConnector.fill_report_to_sheet
+#   -> DevIntConnector.get_bookings_sheet_name
+#   -> DevIntConnector.get_listings_sheet_name
+# DevIntConnector.build_reports ( <- 0 x)
+#   -> DevIntConnector.add_more_account_information_to_bookings
+#   -> DevIntConnector.build_personnel_bookings
+#   -> DevIntConnector.collect_all_accounts
+#   -> DevIntConnector.collect_all_costlocations
+#   -> DevIntConnector.compile_all_xls_sheets
+#   -> DevIntConnector.add_up_bookings
+#   -> DevIntConnector._check_depth
+# DevIntConnector.get_report_summary ( <- 3 x)
+# DevIntConnector.send_email_sending ( <- 1 x)
+#   -> DevIntConnector.get_report_summary
+#   -> DevIntConnector.get_bookings_sheet_name
+#   -> DevIntConnector.get_listings_sheet_name
+# DevIntConnector.send_teams_sending ( <- 1 x)
+#   -> DevIntConnector.get_report_summary
+# DevIntConnector.send_azure_blob_sending ( <- 1 x)
+#   -> DevIntConnector.get_report_summary
+#   -> DevIntConnector.get_bookings_sheet_name
+#   -> DevIntConnector.get_listings_sheet_name
+# DevIntConnector.send_cosmosdb_sending ( <- 1 x)
+# DevIntConnector.send_reports ( <- 0 x)
+#   -> DevIntConnector.send_email_sending
+#   -> DevIntConnector.send_teams_sending
+#   -> DevIntConnector.send_azure_blob_sending
+#   -> DevIntConnector.send_cosmosdb_sending
+
+# ========== [ Non-Class Functions ] ==========
+# read_html_page_template ( <- 0 x)
+# extract_data_from_received_http_request ( <- 0 x)
+# replace_and_format_html_template ( <- 0 x)
+# get_db_config_from_keyvault ( <- 0 x)
+# save_virtual_workbook ( <- 0 x)
+
+# ╔══════════════════════════════════════════════════════════════╗
+# ║                     END DEPENDENCY GRAPH                     ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# last updated 2024-11-14
 import logging
 import yaml
 import os
@@ -465,7 +607,7 @@ class DevIntConnector:
         # self.expense_term = self.settings["expense_term"]
         # self.income_term = self.settings["income_term"]
 
-    def colchar(self, col=0):
+    def _colchar(self, col=0):
         """Convert a column number to an Excel-style column letter."""
 
         base = ord('A')
@@ -477,12 +619,12 @@ class DevIntConnector:
 
         return letters
 
-    def check_depth(self, row, depth=1):
+    def _check_depth(self, row, depth=1):
         mdepth = depth
         if 'children' in row and len(row['children']) > 0:
             cdepth = depth + 1
             for child in row['children']:
-                ndepth = self.check_depth(child, cdepth)
+                ndepth = self._check_depth(child, cdepth)
                 if ndepth > mdepth:
                     mdepth = ndepth
         return mdepth
@@ -1711,7 +1853,7 @@ class DevIntConnector:
                 cell.font = styles.Font(bold=True)
                 if header in self.settings.get('bookingsHeaderWidth', {}):
                     column_width = self.settings['bookingsHeaderWidth'][header]
-                    sheet.column_dimensions[self.colchar(
+                    sheet.column_dimensions[self._colchar(
                         ccol)].width = column_width
                     # self.logger.debug(
                     #     f"Set column width for '{header}' to {column_width}.")
@@ -1968,7 +2110,7 @@ class DevIntConnector:
             f"Starting fill_listings_sheet for listing: '{listing['name']}' in report '{report['name']}'.")
 
         first_report_column = 1
-        report_structure_levels = max(self.check_depth(row, 1)
+        report_structure_levels = max(self._check_depth(row, 1)
                                       for row in report['rows'])
         self.logger.debug(
             f"Calculated report structure levels: {report_structure_levels}.")
@@ -1994,7 +2136,7 @@ class DevIntConnector:
         # Add table headers
         ccol = report_structure_levels + 1
         for header in selected_headers:
-            col_letter = self.colchar(ccol)
+            col_letter = self._colchar(ccol)
             if header in header_width:
                 sheet.column_dimensions[col_letter].width = header_width[header]
             elif 'default' in header_width and header_width['default'] is not False:
@@ -2010,7 +2152,7 @@ class DevIntConnector:
 
         # Adjust column widths for report structure
         for i in range(first_report_column, report_structure_levels + 1):
-            col_letter = self.colchar(i)
+            col_letter = self._colchar(i)
             sheet.column_dimensions[col_letter].width = self.settings['groupTitleRowWidth']
         # self.logger.debug(
         #     "Adjusted column widths for report structure levels.")
@@ -2096,8 +2238,8 @@ class DevIntConnector:
 
         # self.logger.debug("Completed filling bookings listings sheet.")
 
-    def add_slot_header(self, sheet, slot: dict, col: int = 1, row: int = 1, depth: int = 1):
-        # self.logger.debug(f"Starting add_slot_header for slot '{slot['name']}' at column {col}, row {row} with depth {depth}.")
+    def _add_slot_header(self, sheet, slot: dict, col: int = 1, row: int = 1, depth: int = 1):
+        # self.logger.debug(f"Starting _add_slot_header for slot '{slot['name']}' at column {col}, row {row} with depth {depth}.")
 
         # Set slot title and row height
         sheet.cell(row=row, column=col).value = slot['name']
@@ -2113,9 +2255,10 @@ class DevIntConnector:
         for i in range(depth):
             column_width = self.settings['slotListColumnWidth'] if i == (
                 depth - 1) else self.settings['slotGroupColumnWidth']
-            sheet.column_dimensions[self.colchar(col + i)].width = column_width
+            sheet.column_dimensions[self._colchar(
+                col + i)].width = column_width
             # self.logger.debug(
-            #     f"Set column width for column {self.colchar(col + i)} to {column_width}.")
+            #     f"Set column width for column {self._colchar(col + i)} to {column_width}.")
 
         # Merge cells based on depth
         if depth > 1:
@@ -2162,8 +2305,8 @@ class DevIntConnector:
         slot['endRow'] = row + 2
         slot['startColumn'] = col
         slot['endColumn'] = col + depth - 1
-        slot['startDateCellReference'] = f"{self.colchar(slot['endColumn'])}${slot['startDateRow']}"
-        slot['endDateCellReference'] = f"{self.colchar(slot['endColumn'])}${slot['endDateRow']}"
+        slot['startDateCellReference'] = f"{self._colchar(slot['endColumn'])}${slot['startDateRow']}"
+        slot['endDateCellReference'] = f"{self._colchar(slot['endColumn'])}${slot['endDateRow']}"
         # self.logger.debug(f"Set slot cell references: start '{slot['startDateCellReference']}', end '{slot['endDateCellReference']}'.")
 
         # self.logger.debug(f"Completed adding slot header for slot '{slot['name']}'.")
@@ -2199,8 +2342,8 @@ class DevIntConnector:
                 sub_rows = sorted(
                     report_row['children'], key=lambda x: x['rowNumber'])
                 if sub_rows:
-                    formula = f"=SUM({self.colchar(column_to_be_summed)}{sub_rows[0]['rowNumber']}:{self.colchar(column_to_be_summed)}{sub_rows[-1]['rowNumber']})" if len(
-                        sub_rows) > 1 else f"={self.colchar(column_to_be_summed)}{sub_rows[0]['rowNumber']}"
+                    formula = f"=SUM({self._colchar(column_to_be_summed)}{sub_rows[0]['rowNumber']}:{self._colchar(column_to_be_summed)}{sub_rows[-1]['rowNumber']})" if len(
+                        sub_rows) > 1 else f"={self._colchar(column_to_be_summed)}{sub_rows[0]['rowNumber']}"
                     # self.logger.debug(f"Generated item group summation formula: '{formula}'")
                     return formula
                 else:
@@ -2209,15 +2352,15 @@ class DevIntConnector:
             else:
                 # Group of groups summation
                 children = report_row['children']
-                formula = f"=SUM({self.colchar(column_to_be_summed)}{children[0]['rowNumber']}:{self.colchar(column_to_be_summed)}{children[-1]['rowNumber']})" if len(
-                    children) > 1 else f"={self.colchar(column_to_be_summed)}{children[0]['rowNumber']}"
+                formula = f"=SUM({self._colchar(column_to_be_summed)}{children[0]['rowNumber']}:{self._colchar(column_to_be_summed)}{children[-1]['rowNumber']})" if len(
+                    children) > 1 else f"={self._colchar(column_to_be_summed)}{children[0]['rowNumber']}"
                 # self.logger.debug(f"Generated group summation formula: '{formula}'")
                 return formula
 
         elif len(types) > 1 and any(t in types for t in ['expense', 'income', '']):
             if 'children' in report_row:
                 formula_parts = [
-                    f"{'+' if 'income' in get_summation_type(child) else '-'}{self.colchar(column_to_be_summed)}{child['rowNumber']}"
+                    f"{'+' if 'income' in get_summation_type(child) else '-'}{self._colchar(column_to_be_summed)}{child['rowNumber']}"
                     for child in report_row['children']
                 ]
                 formula = "=" + "".join(formula_parts)
@@ -2230,7 +2373,7 @@ class DevIntConnector:
         # self.logger.debug(f"Completed formula generation for row '{report_row['name']}'.")
         return ""
 
-    def get_column_letter_by_column_header(self, sheet, header: str):
+    def _get_column_letter_by_column_header(self, sheet, header: str):
         for cell in sheet["1:1"]:
             if cell.value == header:
                 return cell.column_letter
@@ -2295,18 +2438,18 @@ class DevIntConnector:
             bookings_start_row = 2
             bookings_end_row = len(report['bookings']) + 100
             bsn = self.get_bookings_sheet_name(report['id'])
-            amount_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsAmountColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
-            costlocation_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsCostlocationColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
-            date_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsDateColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
-            dbt2_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsDebitBookingsType2'])}{bookings_start_row}:{bookings_end_row}"
-            cbt2_cell_range = f"{self.get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsCreditBookingsType2'])}{bookings_start_row}:{bookings_end_row}"
+            amount_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsAmountColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
+            costlocation_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsCostlocationColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
+            date_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsDateColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
+            dbt2_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsDebitBookingsType2'])}{bookings_start_row}:{bookings_end_row}"
+            cbt2_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsCreditBookingsType2'])}{bookings_start_row}:{bookings_end_row}"
             # self.logger.debug(
             #     f"Configured cell ranges for bookings data in '{bsn}'.")
 
             # Define functions to create formulas based on slot details and cost location checks
             def formula_opening_cl_cell(slot_details, cell_range, cell_range_search_term):
                 return (f"SUMIFS('{bsn}'!{amount_cell_range},'{bsn}'!{costlocation_cell_range},$"
-                        f"{self.colchar(col + depth)},'{bsn}'!{date_cell_range},\">=\"&{slot_details['startDateCellReference']},"
+                        f"{self._colchar(col + depth)},'{bsn}'!{date_cell_range},\">=\"&{slot_details['startDateCellReference']},"
                         f"'{bsn}'!{date_cell_range},\"<\"&{slot_details['endDateCellReference']}+1,'{bsn}'!{cell_range},\"{cell_range_search_term}\")")
 
             def formula_opening_cl_value(slot_details, cost_location, cell_range, cell_range_search_term):
@@ -2352,9 +2495,9 @@ class DevIntConnector:
 
         # self.logger.debug(f"Completed filling row '{report_row['name']}' in sheet.")
 
-    def set_border_to_area(self,
-                           sheet, start_column=0, start_row=0, end_column=5, end_row=5,
-                           side: styles.Side = styles.Side(
+    def _set_border_to_area(self,
+                            sheet, start_column=0, start_row=0, end_column=5, end_row=5,
+                            side: styles.Side = styles.Side(
             border_style='thin', color='FF000000'),
             top=True, bottom=True, left=True, right=True):
 
@@ -2439,8 +2582,8 @@ class DevIntConnector:
         # Add headers for each slot
         for slot_number, slot in enumerate(report['slots']):
             slot_col = first_slot_col + slot_number * report_structure_levels
-            self.add_slot_header(sheet, slot, col=slot_col,
-                                 row=crow, depth=report_structure_levels)
+            self._add_slot_header(sheet, slot, col=slot_col,
+                                  row=crow, depth=report_structure_levels)
             # self.logger.debug(f"Added slot header for slot {slot_number} at column {slot_col}, row {crow}.")
 
         crow += 4
@@ -2459,11 +2602,11 @@ class DevIntConnector:
 
         # Adjust column widths for report structure levels
         for i in range(report_structure_levels):
-            col_letter = self.colchar(i + 1)
+            col_letter = self._colchar(i + 1)
             sheet.column_dimensions[col_letter].width = self.settings['groupTitleRowWidth']
-        sheet.column_dimensions[self.colchar(
+        sheet.column_dimensions[self._colchar(
             report_structure_levels)].width = self.settings['itemTitleRowWidth']
-        sheet.column_dimensions[self.colchar(
+        sheet.column_dimensions[self._colchar(
             report_structure_levels + 1)].width = self.settings['costLocationColumnWidth']
 
         self.logger.debug(f"report keys: {report.keys()}")
@@ -2476,8 +2619,8 @@ class DevIntConnector:
 
         # Add borders around slots in the sheet
         for slot in report['slots']:
-            self.set_border_to_area(sheet, slot['startColumn'], slot['startRow'],
-                                    slot['endColumn'], slot['endRow'] - report['numSaldoRows'])
+            self._set_border_to_area(sheet, slot['startColumn'], slot['startRow'],
+                                     slot['endColumn'], slot['endRow'] - report['numSaldoRows'])
             # self.logger.debug(f"Set border for slot starting at column {slot['startColumn']}, row {slot['startRow']}.")
 
         self.logger.debug(
@@ -2507,7 +2650,7 @@ class DevIntConnector:
             cell.font = styles.Font(bold=True)
             if header in self.settings.get('bookingsHeaderWidth', {}):
                 column_width = self.settings['bookingsHeaderWidth'][header]
-                sheet.column_dimensions[self.colchar(
+                sheet.column_dimensions[self._colchar(
                     ccol)].width = column_width
                 self.logger.debug(
                     f"Set column width for '{header}' to {column_width}.")
@@ -2531,7 +2674,7 @@ class DevIntConnector:
                 for sum_header in self.settings['personnel_monthly_sum_columns']:
                     col_index = headers.index(sum_header) + 1
                     cell = sheet.cell(row=crow, column=col_index)
-                    cell.value = f"=SUM({self.colchar(col_index)}{crow - num_entries_last_month}:{self.colchar(col_index)}{crow - 1})"
+                    cell.value = f"=SUM({self._colchar(col_index)}{crow - num_entries_last_month}:{self._colchar(col_index)}{crow - 1})"
                     cell.font = styles.Font(bold=True)
                     cell.style = 'Comma'
                 crow += 2
@@ -2568,9 +2711,9 @@ class DevIntConnector:
                     cell.value = str(booking.get(header, ''))
                 ccol += 1
 
-            amount_col_char = self.colchar(
+            amount_col_char = self._colchar(
                 self.settings['keep_personnel_columns'].index('amount') + 1)
-            cost_location_col_char = self.colchar(
+            cost_location_col_char = self._colchar(
                 self.settings['keep_personnel_columns'].index('cost_location') + 1)
             for col in cost_location_cols:
                 cell = sheet.cell(row=crow, column=ccol)
@@ -2773,7 +2916,7 @@ class DevIntConnector:
             # Determine report structure depth
             report_structure_levels = 0
             for row in report['rows']:
-                new_depth = self.check_depth(row, 1)
+                new_depth = self._check_depth(row, 1)
                 report_structure_levels = max(
                     report_structure_levels, new_depth)
             report['structureDepth'] = report_structure_levels
