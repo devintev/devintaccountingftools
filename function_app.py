@@ -63,8 +63,10 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
     selectors = []
     if 'coordination' in http_vars and http_vars['coordination'] == 1:
         selectors.append({'type': 'request', 'condition': 'coordination'})
-    if 'norman' in http_vars and http_vars['norman'] == '1':
+    if 'norman' in http_vars and http_vars['norman'] == 1:
         selectors.append({'type': 'request', 'condition': 'norman'})
+    if 'devtest' in http_vars and http_vars['devtest'] == 1:
+        selectors.append({'type': 'request', 'condition': 'devtest'})
     if 'administration' in http_vars and http_vars['administration'] == 1:
         selectors.append({'type': 'request', 'condition': 'administration'})
     if 'documentation' in http_vars and http_vars['documentation'] == 1:

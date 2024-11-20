@@ -19,6 +19,8 @@ bookingsHeaderWidth:
   currency: 5
   vat: 5
   credit_type: 5
+  debit_booking_type_2: 16
+  credit_booking_type_2: 12
 
 euroFormat : '#0 €' 
 euroFormatPrecise : '#,##0.00 €'

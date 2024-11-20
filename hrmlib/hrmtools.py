@@ -2070,7 +2070,7 @@ class DevIntConnector:
             # self.logger.debug(f"Set info string for row '{report_row['name']}': {info_string}.")
 
             # Calculate and set SUM formula for amount column
-            amount_col = first_col + depth + len(selected_headers) - 2
+            amount_col = first_col + depth + len(selected_headers) - 4
             start_cell = sheet.cell(row=crow + 1, column=amount_col)
             end_cell = sheet.cell(row=crow + sub_rows, column=amount_col)
             sum_formula = f"=SUM({start_cell.coordinate}:{end_cell.coordinate})"
@@ -2081,14 +2081,15 @@ class DevIntConnector:
 
         # self.logger.debug(f"Completed filling report row '{report_row['name']}' in listings sheet.")
 
-    def select_bookings_by_costlocation(self, cost_locations: list, bookings: list, start_date=None, end_date=None):
+    def select_bookings_by_costlocation(self, cost_locations: list, bookings: list, start_date=None, end_date=None, nur_erfolg=False):
         # self.logger.debug(f"Starting select_bookings_by_costlocation with {len(cost_locations)} cost locations and {len(bookings)} bookings.")
 
         # Convert cost locations to strings for comparison
         string_cost_locations = [str(cl) for cl in cost_locations]
         selected_bookings = []
-
+        non_erfolg_bookings: list = []
         # Select bookings that match any of the specified cost locations
+
         for booking in bookings:
             if start_date is not None or end_date is not None:
                 booking_date = datetime.datetime.strptime(
@@ -2099,9 +2100,19 @@ class DevIntConnector:
                 if end_date is not None:
                     if booking_date > end_date:
                         continue
+                if nur_erfolg and booking['cost_location'] in string_cost_locations or booking['cost_location'] in cost_locations:
+                    if not (booking['credit_booking_type_1'] == "Erfolg" or booking['debit_booking_type_1'] == "Erfolg"):
+                        non_erfolg_bookings.append(booking)
+                        continue
             if booking['cost_location'] in string_cost_locations or booking['cost_location'] in cost_locations:
                 selected_bookings.append(booking)
 
+        if nur_erfolg and len(non_erfolg_bookings) > 0:
+            self.logger.warning(str(len(non_erfolg_bookings))
+                                + " Kostenstellenbuchung ohne Erfolgskonto in Kst. " + str(cost_locations))
+            for b in non_erfolg_bookings:
+                self.logger.error(
+                    "Kostenstellenbuchung ohne Erfolgskonto!!" + str(b))
         # self.logger.debug(f"Selected {len(selected_bookings)} bookings matching specified cost locations.")
         return selected_bookings
 
@@ -2119,7 +2130,7 @@ class DevIntConnector:
         selected_headers = [
             'date', 'booking_number', 'cost_location',
             'debit_postingaccount_number', 'credit_postingaccount_number',
-            'postingtext', 'amount', 'currency'
+            'postingtext', 'amount', 'currency', 'debit_booking_type_2', 'credit_booking_type_2',
         ]
         header_width = self.settings['bookingsHeaderWidth']
 
@@ -2162,7 +2173,8 @@ class DevIntConnector:
             selected_bookings = []
             if row['type'] in ['expense', 'income']:
                 selected_bookings = self.select_bookings_by_costlocation(
-                    row['costLocations'], report['bookings'])
+                    row['costLocations'], report['bookings'],
+                    start_date=listing['start'], end_date=listing['end'])
                 # self.logger.debug(
                 #     f"Selected {len(selected_bookings)} bookings for row '{row['name']}' with type '{row['type']}'.")
 
@@ -2180,8 +2192,10 @@ class DevIntConnector:
                 # Fill in selected bookings if available
                 if row['type'] in ['expense', 'income'] and selected_bookings:
                     self.fill_bookings_listings_sheet(
-                        selected_bookings, sheet, crow, selected_headers,
-                        first_col=first_report_column + report_structure_levels
+                        bookings=selected_bookings,
+                        sheet=sheet, current_row=crow, selected_headers=selected_headers,
+                        first_col=first_report_column + report_structure_levels,
+                        row_type=row['type']
                     )
                     crow += len(selected_bookings)
                     # self.logger.debug(
@@ -2190,12 +2204,15 @@ class DevIntConnector:
         self.logger.debug(
             f"Completed filling listings sheet for '{listing['name']}' in report '{report['name']}'.")
 
-    def fill_bookings_listings_sheet(self, bookings: list, sheet: Worksheet, current_row: int, selected_headers: list, first_col: int = 1):
-        # self.logger.debug(f"Starting fill_bookings_listings_sheet with {len(bookings)} bookings and headers: {selected_headers}.")
+    def fill_bookings_listings_sheet(self, bookings: list, sheet: Worksheet, current_row: int,
+                                     selected_headers: list, first_col: int = 1,
+                                     row_type: str = 'expense'):
+        self.logger.debug(
+            f"Starting fill_bookings_listings_sheet with {len(bookings)} bookings and headers: {selected_headers}.")
 
         crow = current_row
-        listing_sign = - \
-            1.0 if self.settings.get("listing_type") == 'expense' else 1.0
+        # listing_sign = + \
+        #     1.0 if self.settings.get("listing_type") == 'expense' else 1.0
 
         for booking in bookings:
             ccol = first_col
@@ -2207,12 +2224,40 @@ class DevIntConnector:
                     if header in ['amount', 'vat', 'receipts_assigned_vat_rates', 'receipts_assigned_assigned_amounts']:
                         cell.style = 'Comma'
                         sign = 1.0
-                        if booking.get("credit_booking_type_2") == self.settings["expense_term"]:
-                            sign = 1.0
-                        elif booking.get("debit_booking_type_2") == self.settings["expense_term"]:
-                            sign = -1.0
-                        cell.value = listing_sign * \
-                            sign * float(booking[header])
+                        if (booking.get("debit_booking_type_2") == booking.get("credit_booking_type_2") or
+                            (booking.get("debit_booking_type_2") == self.settings["income_term"] and
+                            booking.get("credit_booking_type_2") == self.settings["expense_term"]) or
+                            (booking.get("debit_booking_type_2") == self.settings["expense_term"] and
+                            booking.get("credit_booking_type_2") == self.settings["income_term"]) or
+                            (booking.get("debit_booking_type_2") not in [self.settings["expense_term"], self.settings["income_term"]] and
+                                booking.get("credit_booking_type_2") not in [self.settings["expense_term"], self.settings["income_term"]])):
+                            sign = 0.0
+                        else:
+                            if booking.get("debit_booking_type_2") == self.settings["expense_term"]:
+                                if row_type == 'expense':
+                                    sign = 1.0
+                                if row_type == 'income':
+                                    sign = -1.0
+                            elif booking.get("debit_booking_type_2") == self.settings["income_term"]:
+                                if row_type == 'expense':
+                                    sign = 1.0
+                                if row_type == 'income':
+                                    sign = -1.0
+                            elif booking.get("credit_booking_type_2") == self.settings["expense_term"]:
+                                if row_type == 'expense':
+                                    sign = -1.0
+                                if row_type == 'income':
+                                    sign = 1.0
+                            elif booking.get("credit_booking_type_2") == self.settings["income_term"]:
+                                if row_type == 'expense':
+                                    sign = -1.0
+                                if row_type == 'income':
+                                    sign = 1.0
+                            else:
+                                self.logger.warning(
+                                    "tried to add booking to listings sheet with no expense or income booking account type.")
+                        if header == 'amount':
+                            cell.value = sign * float(booking[header])
                     elif header == 'date':
                         cell.value = datetime.datetime.strptime(
                             booking[header], "%Y-%m-%d %H:%M:%S")
@@ -2225,6 +2270,22 @@ class DevIntConnector:
                         cell.value = int(booking[header])
                     elif header in ['debit_booking_categories', 'credit_booking_categories']:
                         cell.value = ' - '.join(booking[header])
+                    elif header in ['debit_booking_type_2']:
+                        debit_type = booking.get(header, '')
+                        if debit_type == self.settings["expense_term"]:
+                            debit_type = "Aufwand"
+                        elif debit_type == self.settings["income_term"]:
+                            debit_type = "Ertrag"
+                        cell.value = debit_type + " (Soll) <- an"
+                        cell.alignment = styles.Alignment(horizontal='right')
+                    elif header in ['credit_booking_type_2']:
+                        credit_type = booking.get(header, '')
+                        if credit_type == self.settings["expense_term"]:
+                            credit_type = "Aufwand"
+                        elif credit_type == self.settings["income_term"]:
+                            credit_type = "Ertrag"
+                        cell.value = credit_type + " (Haben)"
+                        cell.alignment = styles.Alignment(horizontal='left')
                     else:
                         cell.value = str(booking[header])
                 except (ValueError, TypeError) as e:
@@ -2381,7 +2442,6 @@ class DevIntConnector:
     def fill_row_to_sheet(self, report: dict, report_row: dict, sheet: Worksheet, bookings_sheet: str, first_col: int = 1, depth: int = 1):
         # self.logger.debug(
         #     f"Starting fill_row_to_sheet for report row '{report_row['name']}' with type '{report_row['type']}'.")
-
         crow = report_row['rowNumber']
         col = first_col
 
@@ -2438,18 +2498,28 @@ class DevIntConnector:
             bookings_start_row = 2
             bookings_end_row = len(report['bookings']) + 100
             bsn = self.get_bookings_sheet_name(report['id'])
-            amount_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsAmountColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
-            costlocation_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsCostlocationColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
-            date_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsDateColumnHeader'])}{bookings_start_row}:{bookings_end_row}"
-            dbt2_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsDebitBookingsType2'])}{bookings_start_row}:{bookings_end_row}"
-            cbt2_cell_range = f"{self._get_column_letter_by_column_header(bookings_sheet, self.settings['bookingsCreditBookingsType2'])}{bookings_start_row}:{bookings_end_row}"
+            amount_cell_column_letter = self._get_column_letter_by_column_header(
+                bookings_sheet, self.settings['bookingsAmountColumnHeader'])
+            amount_cell_range = f"{amount_cell_column_letter}{bookings_start_row}:{amount_cell_column_letter}{bookings_end_row}"
+            costlocation_column_letter = self._get_column_letter_by_column_header(
+                bookings_sheet, self.settings['bookingsCostlocationColumnHeader'])
+            costlocation_cell_range = f"{costlocation_column_letter}{bookings_start_row}:{costlocation_column_letter}{bookings_end_row}"
+            date_column_letter = self._get_column_letter_by_column_header(
+                bookings_sheet, self.settings['bookingsDateColumnHeader'])
+            date_cell_range = f"{date_column_letter}{bookings_start_row}:{date_column_letter}{bookings_end_row}"
+            dbt2_column_letter = self._get_column_letter_by_column_header(
+                bookings_sheet, self.settings['bookingsDebitBookingsType2'])
+            dbt2_cell_range = f"{dbt2_column_letter}{bookings_start_row}:{dbt2_column_letter}{bookings_end_row}"
+            cbt2_column_letter = self._get_column_letter_by_column_header(
+                bookings_sheet, self.settings['bookingsCreditBookingsType2'])
+            cbt2_cell_range = f"{cbt2_column_letter}{bookings_start_row}:{cbt2_column_letter}{bookings_end_row}"
             # self.logger.debug(
             #     f"Configured cell ranges for bookings data in '{bsn}'.")
 
             # Define functions to create formulas based on slot details and cost location checks
-            def formula_opening_cl_cell(slot_details, cell_range, cell_range_search_term):
+            def formula_opening_cl_cell(slot_details, current_row, cell_range, cell_range_search_term):
                 return (f"SUMIFS('{bsn}'!{amount_cell_range},'{bsn}'!{costlocation_cell_range},$"
-                        f"{self._colchar(col + depth)},'{bsn}'!{date_cell_range},\">=\"&{slot_details['startDateCellReference']},"
+                        f"{self._colchar(col + depth)}{current_row},'{bsn}'!{date_cell_range},\">=\"&{slot_details['startDateCellReference']},"
                         f"'{bsn}'!{date_cell_range},\"<\"&{slot_details['endDateCellReference']}+1,'{bsn}'!{cell_range},\"{cell_range_search_term}\")")
 
             def formula_opening_cl_value(slot_details, cost_location, cell_range, cell_range_search_term):
@@ -2473,8 +2543,8 @@ class DevIntConnector:
                             f"{sign}{formula_opening_cl_value(slot_details, cl, cell_range, term)}"
                             for cl in report_row["costLocationsStrings"]
                             for sign, cell_range, term in [
-                                ("", dbt2_cell_range, self.settings["expense_term"]), ("-",
-                                                                                       cbt2_cell_range, self.settings["income_term"]),
+                                ("+", dbt2_cell_range, self.settings["expense_term"]), ("-",
+                                                                                        cbt2_cell_range, self.settings["income_term"]),
                                 ("+", dbt2_cell_range, self.settings["income_term"]), ("-",
                                                                                        cbt2_cell_range, self.settings["expense_term"])
                             ]
@@ -2482,16 +2552,22 @@ class DevIntConnector:
                         formula = "+".join(formula_parts)
                     else:
                         formula = (
-                            f"{formula_opening_cl_cell(slot_details, dbt2_cell_range, self.settings['expense_term'])}-"
-                            f"{formula_opening_cl_cell(slot_details, cbt2_cell_range, self.settings['income_term'])}+"
-                            f"{formula_opening_cl_cell(slot_details, dbt2_cell_range, self.settings['income_term'])}-"
-                            f"{formula_opening_cl_cell(slot_details, cbt2_cell_range, self.settings['expense_term'])}"
+                            f"{formula_opening_cl_cell(slot_details, crow, dbt2_cell_range, self.settings['expense_term'])}"
+                            f"-{formula_opening_cl_cell(slot_details, crow, cbt2_cell_range, self.settings['income_term'])}"
+                            f"+{formula_opening_cl_cell(slot_details, crow, dbt2_cell_range, self.settings['income_term'])}"
+                            f"-{formula_opening_cl_cell(slot_details, crow, cbt2_cell_range, self.settings['expense_term'])}"
                         )
 
-                    cell.value = f"={'-' if report_row['type'] == 'income' else ''}({formula})"
+                    if report_row['type'] == 'income':
+                        formula = f"-({formula})"
+                    cell.value = f"={formula}"
+                    # print("filling bookings summation cell",
+                    #       cell.value, cell.coordinate)
+
                     cell.number_format = self.settings['euroFormat']
                     cell.alignment = styles.Alignment(horizontal="right")
-                    # self.logger.debug(f"Set formula for slot '{slot['name']}' in row '{report_row['name']}'.")
+                    # self.logger.debug(
+                    #     f"Set formula for slot '{slot['name']}' in row '{report_row['name']}'.")
 
         # self.logger.debug(f"Completed filling row '{report_row['name']}' in sheet.")
 
@@ -2622,7 +2698,6 @@ class DevIntConnector:
             self._set_border_to_area(sheet, slot['startColumn'], slot['startRow'],
                                      slot['endColumn'], slot['endRow'] - report['numSaldoRows'])
             # self.logger.debug(f"Set border for slot starting at column {slot['startColumn']}, row {slot['startRow']}.")
-
         self.logger.debug(
             f"Completed filling report '{report['name']}' to sheet.")
 
@@ -2838,6 +2913,7 @@ class DevIntConnector:
 
         # Loop through each report in instructions and add relevant sheets
         report_ids = list(instructions['reports'].keys())
+
         for report_id in report_ids:
             if report_id in reports:
                 self.logger.debug(f"Creating sheets for report '{report_id}'.")
@@ -2920,15 +2996,15 @@ class DevIntConnector:
                 report_structure_levels = max(
                     report_structure_levels, new_depth)
             report['structureDepth'] = report_structure_levels
-            self.logger.debug(
-                f"Report '{report['name']}' structure depth set to {report_structure_levels}.")
+            # self.logger.debug(
+            #     f"Report '{report['name']}' structure depth set to {report_structure_levels}.")
 
             # Identify saldo rows (top-level groups) and count them
             saldo_rows = [row for row in report['rows'] if row['type'].lower(
             ) == "group" and len(row['hierarchyLocation']) == 0]
             report['numSaldoRows'] = len(saldo_rows)
-            self.logger.debug(
-                f"Report '{report['name']}' has {report['numSaldoRows']} saldo rows.")
+            # self.logger.debug(
+            #     f"Report '{report['name']}' has {report['numSaldoRows']} saldo rows.")
 
             # Add summary information to the report dictionary
             result = self.add_up_bookings(report_bookings)
