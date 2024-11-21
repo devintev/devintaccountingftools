@@ -2708,18 +2708,63 @@ class DevIntConnector:
             return
 
         # Extract headers and categorize personnel-related and other columns
-        headers = list(bookings[0].keys())
-        personnel_columns = [
-            col for col in headers if col in self.settings['keep_personnel_columns']]
-        additional_columns = [
-            col for col in headers if col not in self.settings['keep_personnel_columns']]
-        headers = personnel_columns + additional_columns
-        cost_location_cols = ["12", "22", "23", "24", "25"]
+        sample_columns_settings: dict = {'col_forward': 1, 'col_index': 0}
+        headers = {
+            header: sample_columns_settings.copy() for header in bookings[0].keys()}
+
+        # get lists of accounts relevant for payroll and personnel bookings
+        # clearing accounts should sum up to 0 saldo for each month
+        clearing_accounts: dict[str, str] = {
+            key: value for key, value in self.settings['skr49_payroll_clearing_accounts'].items()
+            if key in headers
+        }
+        # liabilities accounts should be sum up to 0 as soon as payments to tax department and social insurance are done - normally monthly
+        liabilities_accounts: dict[str,
+                                   str] = {
+            key: value for key, value in self.settings['skr49_payroll_liabilities_accounts'].items()
+            if key in headers
+        }
+        # personnel expenses ideeller Bereich
+        personnel_accounts_ideell: dict[str,
+                                        str] = {
+            key: value for key, value in self.settings['skr49_personnel_expenses_non_profit'].items()
+            if key in headers
+        }
+        # personnel expenses purpose operations
+        personnel_accounts_zweck: dict[str,
+                                       str] = {
+            key: value for key, value in self.settings['skr49_personnel_expenses_vat_exempt_purpose'].items()
+            if key in headers
+        }
+        account_groups = [clearing_accounts, liabilities_accounts,
+                          personnel_accounts_ideell, personnel_accounts_zweck]
+        all_accounts: list[str] = [
+            account for accounts in account_groups for account in accounts.keys()]
+        # Update col_forward to 2 for the first key in each dictionary in account_groups
+        for group in account_groups:
+            if group:  # Ensure the dictionary is not empty
+                first_header = next(iter(group))  # Get the first key
+                if first_header in headers:  # Check if the header exists in headers
+                    headers[first_header]['col_forward'] = 2
+
+        # Add columns for cost location columns
+        cost_location_groups: dict[str, str] = {
+            "P" + key: value for key, value in self.settings['devint_cost_location_groups'].items()
+            if "P" + key in headers
+        }
+        all_costlocation_groups: list[str] = [
+            group for group in cost_location_groups.keys()]
+        first_header = next(iter(cost_location_groups))  # Get the first key
+        if first_header in headers:  # Check if the header exists in headers
+            headers[first_header]['col_forward'] = 2
 
         # Start building table header
+        check_column_width = self.settings['bookingsHeaderWidth']['amount'] - 4
         self.logger.debug("Starting to build table header.")
-        crow, ccol = 1, 1
-        for header in headers:
+        crow, ccol = 1, 0
+        for header, h_settings in headers.items():
+            ccol += h_settings['col_forward']
+            headers[header]['col_index'] = ccol
             cell = sheet.cell(row=crow, column=ccol)
             cell.value = header
             cell.font = styles.Font(bold=True)
@@ -2727,43 +2772,71 @@ class DevIntConnector:
                 column_width = self.settings['bookingsHeaderWidth'][header]
                 sheet.column_dimensions[self._colchar(
                     ccol)].width = column_width
-                self.logger.debug(
-                    f"Set column width for '{header}' to {column_width}.")
-            ccol += 1
+            elif header in all_accounts:
+                sheet.column_dimensions[self._colchar(
+                    ccol)].width = check_column_width
+            elif header in [p for p in cost_location_groups.keys()]:
+                sheet.column_dimensions[self._colchar(
+                    ccol)].width = check_column_width
 
-        for col in cost_location_cols:
-            cell = sheet.cell(row=crow, column=ccol)
-            cell.value = f"P{col}"
-            cell.font = styles.Font(bold=True)
-            ccol += 1
-
-        crow += 2
+        crow += 1
+        ccol = 1
         last_month = bookings[0]['month']
         self.logger.debug(
             f"Starting to fill booking entries with initial month set to {last_month}.")
-
+        maxrow = 0
+        last_saldo_row = 0
         for booking in bookings:
             if last_month != booking['month']:
+                cell = sheet.cell(
+                    row=crow, column=headers['postingtext']['col_index'])
+                cell.value = "Saldo Monat"
+                # New month data started, complete rows for last month
                 num_entries_last_month = sum(
                     b['month'] == last_month for b in bookings)
-                for sum_header in self.settings['personnel_monthly_sum_columns']:
-                    col_index = headers.index(sum_header) + 1
-                    cell = sheet.cell(row=crow, column=col_index)
-                    cell.value = f"=SUM({self._colchar(col_index)}{crow - num_entries_last_month}:{self._colchar(col_index)}{crow - 1})"
-                    cell.font = styles.Font(bold=True)
-                    cell.style = 'Comma'
+                # for sum_header in self.settings['personnel_monthly_sum_columns']:
+                for header, h_settings in headers.items():
+                    if header in all_accounts or header in all_costlocation_groups:
+                        col_index = headers[header]['col_index']
+                        cell = sheet.cell(row=crow, column=col_index)
+                        cell.value = f"=SUM({self._colchar(col_index)}{crow - num_entries_last_month}:{self._colchar(col_index)}{crow - 1})"
+                        cell.font = styles.Font(bold=True)
+                        cell.style = 'Comma'
+                        cell.number_format = self.settings['euroFormatPrecise']
+
+                crow += 1
+                cell = sheet.cell(
+                    row=crow, column=headers['postingtext']['col_index'])
+                cell.value = "Rolling Saldo Total"
+                cell.font = styles.Font(bold=True)
+                cell.style = 'Comma'
+                for header, h_settings in headers.items():
+                    if header in {**clearing_accounts, **liabilities_accounts}.keys():
+                        col_index = headers[header]['col_index']
+                        cell = sheet.cell(row=crow, column=col_index)
+                        cell.value = f"={self._colchar(col_index)}{crow - 1}"
+                        if last_saldo_row:
+                            cell.value += f"+{self._colchar(col_index)}{last_saldo_row}"
+                        cell.font = styles.Font(bold=True)
+                        cell.style = 'Comma'
+                        cell.number_format = self.settings['euroFormatPrecise']
+                        cell.fill = styles.PatternFill(
+                            start_color="EDF4FF", end_color="E2EBFB", fill_type="solid")
+                last_saldo_row = crow
                 crow += 2
                 last_month = booking['month']
                 self.logger.debug(
                     f"Updated row for month change to {last_month}.")
 
             ccol = 1
-            for header in headers:
-                cell = sheet.cell(row=crow, column=ccol)
+            for header, h_settings in headers.items():
+                cell = sheet.cell(
+                    row=crow, column=headers[header]['col_index'])
                 try:
                     if header in ['amount', 'vat', 'receipts_assigned_vat_rates', 'receipts_assigned_assigned_amounts']:
                         cell.style = 'Comma'
                         cell.value = float(booking[header])
+                        cell.number_format = self.settings['euroFormatPrecise']
                     elif header == 'date':
                         cell.value = datetime.strptime(
                             booking[header], "%Y-%m-%d %H:%M:%S") if isinstance(booking[header], str) else booking[header]
@@ -2776,8 +2849,10 @@ class DevIntConnector:
                         cell.value = int(booking[header])
                     elif header in ['debit_booking_categories', 'credit_booking_categories']:
                         cell.value = ' - '.join(booking[header])
-                    elif header in self.settings['personnel_monthly_sum_columns'] and booking[header]:
+                    elif booking[header] and (header in all_accounts or header in all_costlocation_groups):
                         cell.value = booking[header]
+                        cell.style = 'Comma'
+                        cell.number_format = self.settings['euroFormatPrecise']
                     else:
                         cell.value = str(booking[header])
                 except (ValueError, TypeError) as e:
@@ -2786,24 +2861,48 @@ class DevIntConnector:
                     cell.value = str(booking.get(header, ''))
                 ccol += 1
 
-            amount_col_char = self._colchar(
-                self.settings['keep_personnel_columns'].index('amount') + 1)
-            cost_location_col_char = self._colchar(
-                self.settings['keep_personnel_columns'].index('cost_location') + 1)
-            for col in cost_location_cols:
-                cell = sheet.cell(row=crow, column=ccol)
-                mcols = [f"{col}21", f"{col}22", f"{col}23"]
-                formula = (f"=IF({cost_location_col_char}{crow}=\"{mcols[0]}\",{amount_col_char}{crow},"
-                           f"IF({cost_location_col_char}{crow}=\"{mcols[1]}\",{amount_col_char}{crow},"
-                           f"IF({cost_location_col_char}{crow}=\"{mcols[2]}\",{amount_col_char}{crow},\"\")))")
-                cell.value = formula
-                ccol += 1
             crow += 1
+            if crow > maxrow:
+                maxrow = crow
+
+        # add borders to groups
+        for group in account_groups:
+            if group:
+                first_col_index = headers[next(iter(group))]['col_index']
+                last_col_index = headers[next(reversed(group))]['col_index']
+                self._set_border_to_area(sheet, first_col_index, 1,
+                                         last_col_index, maxrow, side=styles.Side(border_style='medium'))
+        first_col_index = headers[next(
+            iter(cost_location_groups))]['col_index']
+        last_col_index = headers[next(
+            reversed(cost_location_groups))]['col_index']
+        self._set_border_to_area(sheet, first_col_index, 1,
+                                 last_col_index, maxrow, side=styles.Side(border_style='medium'))
+
+        sheet.freeze_panes = sheet.cell(row=2,
+                                        column=headers['booking_number']['col_index']
+                                        )
         self.logger.debug(
             "Completed filling personnel bookings into the sheet.")
 
     def build_personnel_bookings(self, bookings: list, logger=None):
         self.logger.info("Starting to build personnel bookings DataFrame.")
+
+        # get lists of accounts relevant for payroll and personnel bookings
+        # clearing accounts should sum up to 0 saldo for each month
+        clearing_accounts: dict[str,
+                                str] = self.settings['skr49_payroll_clearing_accounts']
+        # liabilities accounts should be sum up to 0 as soon as payments to tax department and social insurance are done - normally monthly
+        liabilities_accounts: dict[str,
+                                   str] = self.settings['skr49_payroll_liabilities_accounts']
+        # personnel expenses ideeller Bereich
+        personnel_accounts_ideell: dict[str,
+                                        str] = self.settings['skr49_personnel_expenses_non_profit']
+        # personnel expenses purpose operations
+        personnel_accounts_zweck: dict[str,
+                                       str] = self.settings['skr49_personnel_expenses_vat_exempt_purpose']
+        account_groups = [clearing_accounts, liabilities_accounts,
+                          personnel_accounts_ideell, personnel_accounts_zweck]
 
         # Create DataFrame and filter relevant columns
         p_bookings = pd.DataFrame(bookings)
@@ -2819,6 +2918,9 @@ class DevIntConnector:
         for col in int_columns:
             p_bookings[col] = p_bookings[col].astype('Int64', errors='ignore')
         self.logger.debug("Converted date and integer columns in DataFrame.")
+
+        cost_location_cols_nums: list[str] = [
+            k for k in self.settings['devint_cost_location_groups'].keys()]
 
         # Define month grouping logic
         month_abbreviations = {'Jan.': 1, 'Feb.': 2, 'Mrz.': 3, 'Apr.': 4, 'Mai': 5,
@@ -2847,8 +2949,25 @@ class DevIntConnector:
                 return -amount
             return 0
 
+        def calculate_costlocation_group_expense(row, costlocation_group: str):
+            if row['cost_location'].startswith(costlocation_group):
+                # float(str(row['amount']) #.replace('.', '').replace(',', '.'))
+                amount = float(row['amount'])
+                if (row['debit_booking_type_1'] == "Erfolg") ^ (row['credit_booking_type_1'] == "Erfolg"):
+                    if row['debit_booking_type_2'] == self.settings['expense_term'] or row['credit_booking_type_2'] == self.settings['income_term']:
+                        return amount
+                    elif row['debit_booking_type_2'] == self.settings['income_term'] or row['credit_booking_type_2'] == self.settings['expense_term']:
+                        return -amount
+                    else:
+                        return 0.0
+                else:
+                    return 0.0
+            else:
+                return 0.0
+
         # Filter bookings by relevant accounts
-        relevant_accounts = [1700, 1705, 1712, 1730]
+        relevant_accounts: list[int] = [
+            int(account) for accounts in account_groups for account in accounts.keys()]
         mask = p_bookings['debit_postingaccount_number'].isin(
             relevant_accounts) | p_bookings['credit_postingaccount_number'].isin(relevant_accounts)
         p_bookings = p_bookings[mask]
@@ -2861,11 +2980,20 @@ class DevIntConnector:
             by=['month', 'debit_postingaccount_number'], ascending=[True, True])
         self.logger.debug("Assigned 'month' values and sorted the DataFrame.")
 
-        for liability in self.settings['personnel_monthly_sum_columns']:
-            p_bookings[liability] = p_bookings.apply(
-                lambda row: calculate_liability(row, liability) / 100.0, axis=1)
+        for account, description in {key: value for group in account_groups for key, value in group.items()}.items():
+            p_bookings[account] = p_bookings.apply(
+                lambda row: calculate_liability(row, account) / 100.0, axis=1)
+            # Check if all values in the column are 0, and drop the column if true
+            if (p_bookings[account] == 0).all():
+                p_bookings = p_bookings.drop(columns=[account])
             self.logger.debug(
-                f"Calculated liability for column '{liability}'.")
+                f"Calculated liability for column {account}:{description}.")
+
+        for costlocation_group in cost_location_cols_nums:
+            p_bookings[f"P{costlocation_group}"] = p_bookings.apply(
+                lambda row: calculate_costlocation_group_expense(row, costlocation_group), axis=1)
+            self.logger.debug(
+                f"Calculated costlocation group expenses for group {costlocation_group}.")
 
         self.logger.debug("Completed personnel bookings DataFrame processing.")
         return p_bookings.to_dict(orient='records')
@@ -2914,6 +3042,8 @@ class DevIntConnector:
         # Loop through each report in instructions and add relevant sheets
         report_ids = list(instructions['reports'].keys())
 
+        # deleteme
+        # report_ids = []
         for report_id in report_ids:
             if report_id in reports:
                 self.logger.debug(f"Creating sheets for report '{report_id}'.")

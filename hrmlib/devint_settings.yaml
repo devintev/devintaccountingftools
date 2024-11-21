@@ -54,11 +54,50 @@ keep_personnel_columns:
   - transactions_purpose
   - realisation
 
+skr49_payroll_clearing_accounts:
+  '1730' : 'Lohn- und Gehaltsverrechnung'
+  '1731' : 'Lohn- und Gehaltsverrechnung nach § 11 Abs. 2 S. 2 EStG für § 4 Abs. 3 EStG'
+  '1732' : 'Verbindlichkeiten im Rahmen der sozialen Sicherheit für § 4 Abs. 3 EStG'
+
+skr49_payroll_liabilities_accounts:
+  '1700' : 'Verbindlichkeiten aus Lohn- und Kirchensteuer'
+  '1705' : 'Verbindlichkeiten im Rahmen der sozialen Sicherheit'
+  '1712' : 'Verbindlichkeiten aus Lohn und Gehalt'
+
+skr49_personnel_expenses_non_profit:
+  '2550' : 'Anteilige Personalkosten'
+  '2551' : 'Löhne und Gehälter'
+  '2552' : 'Ehrenamtspauschale'
+  '2553' : 'Abgeführte Lohnsteuer'
+  '2554' : 'Aufwandsentschädigungen Übungsleiter'
+  '2555' : 'Gesetzliche soziale Aufwendungen'
+  '2556' : 'Aushilfslöhne'
+  '2557' : 'Sachzuwendungen und Dienstleistungen an Arbeitnehmer'
+  '2558' : 'Beiträge zur Berufsgenossenschaft'
+
+skr49_personnel_expenses_vat_exempt_purpose:
+  '6700' : 'Löhne und Gehälter'
+  '6705' : 'Personalkosten Übungsleiter'
+  '6710' : 'Aufwandsentschädigung § 3 Nr. 26 EStG'
+  '6715' : 'Aushilfslöhne Soziale Abgaben'
+  '6750' : 'Gesetzliche soziale Aufwendungen'
+  '6751' : 'Beiträge zur Berufsgenossenschaft'
+
 personnel_monthly_sum_columns:
   - '1700'
   - '1705'
   - '1712'
   - '1730'
+
+devint_cost_location_groups:
+  '01' : 'allgemeiner ideeller Bereich'
+  '12' : 'Zweckbetrieb WCC'
+  '13' : 'Zweckbetrieb OD'
+  '21' : 'HRM Startup Feb 2022'
+  '22' : 'HRM April - Dec 2022'
+  '23' : 'HRM 2023 - 2025'
+  '24' : 'HRM Support 2023 - 2025'
+  '25' : 'HRM 2025 - 2028'
 
 cosmos_db_url: "https://devintaccountingdb.documents.azure.com:443/"
 cosmos_db_id: "WorkingHoursAccounting"
