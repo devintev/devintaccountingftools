@@ -2070,13 +2070,14 @@ class DevIntConnector:
             # self.logger.debug(f"Set info string for row '{report_row['name']}': {info_string}.")
 
             # Calculate and set SUM formula for amount column
-            amount_col = first_col + depth + len(selected_headers) - 4
-            start_cell = sheet.cell(row=crow + 1, column=amount_col)
-            end_cell = sheet.cell(row=crow + sub_rows, column=amount_col)
-            sum_formula = f"=SUM({start_cell.coordinate}:{end_cell.coordinate})"
-            amount_cell = sheet.cell(row=crow, column=amount_col)
-            amount_cell.value = sum_formula
-            amount_cell.number_format = self.settings['euroFormatPrecise']
+            if sub_rows > 0:
+                amount_col = first_col + depth + len(selected_headers) - 4
+                start_cell = sheet.cell(row=crow + 1, column=amount_col)
+                end_cell = sheet.cell(row=crow + sub_rows, column=amount_col)
+                sum_formula = f"=SUM({start_cell.coordinate}:{end_cell.coordinate})"
+                amount_cell = sheet.cell(row=crow, column=amount_col)
+                amount_cell.value = sum_formula
+                amount_cell.number_format = self.settings['euroFormatPrecise']
             # self.logger.debug(f"Set SUM formula '{sum_formula}' in amount column for row '{report_row['name']}'.")
 
         # self.logger.debug(f"Completed filling report row '{report_row['name']}' in listings sheet.")
@@ -2803,6 +2804,8 @@ class DevIntConnector:
                         cell.font = styles.Font(bold=True)
                         cell.style = 'Comma'
                         cell.number_format = self.settings['euroFormatPrecise']
+                        cell.border = styles.Border(top=styles.Side(
+                            border_style='thin', color='FF000000'))
 
                 crow += 1
                 cell = sheet.cell(
@@ -2977,7 +2980,7 @@ class DevIntConnector:
         # Add 'month' column and sort
         p_bookings['month'] = p_bookings.apply(month_group, axis=1)
         p_bookings = p_bookings.sort_values(
-            by=['month', 'debit_postingaccount_number'], ascending=[True, True])
+            by=['month', 'date', 'debit_postingaccount_number'], ascending=[True, True, True])
         self.logger.debug("Assigned 'month' values and sorted the DataFrame.")
 
         for account, description in {key: value for group in account_groups for key, value in group.items()}.items():
