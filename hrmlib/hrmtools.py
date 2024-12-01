@@ -2395,9 +2395,7 @@ class DevIntConnector:
         types = get_summation_type(report_row)
         its_an_item_group = 'children' in report_row and report_row['children'][0]['type'] in [
             'expense', 'income']
-        # deleteme
-        # column_to_be_summed = slot['slotDetails']['startColumn'] + \
-        #     max_levels - 1 - (1 if is_saldo_row else 0)
+
         if its_an_item_group:
             # take last column in slot
             column_to_be_summed = slot['slotDetails']['endColumn']
@@ -2463,9 +2461,6 @@ class DevIntConnector:
             fill = self.settings.get(
                 f'level{level}Fill', self.settings['level0Fill'])
 
-            # deleteme
-            print("group", report_row['name'], "level", level, "depth", depth)
-
             # Set row title and format cells
             cell = sheet.cell(row=crow, column=col + level)
             cell.value = report_row['name'] if not is_saldo_row else "Period Balance"
@@ -2485,11 +2480,6 @@ class DevIntConnector:
                 end_column = slot['slotDetails']['endColumn']
                 cell_column = start_column + (level - 1 if level > 0 else 0)
                 cell = sheet.cell(row=crow, column=cell_column)
-
-                # deleteme
-                print("cell", cell_column, crow, "row type",
-                      report_row['type'], "slot type",
-                      slot['type'], "slot", start_column, end_column)
 
                 # Set value or formula based on slot type
                 if slot['type'] == 'budget' and 'limit' in slot:
@@ -3099,7 +3089,7 @@ class DevIntConnector:
         report_ids = list(instructions['reports'].keys())
 
         # deleteme
-        report_ids = ['P23']
+        # report_ids = ['P23']
         for report_id in report_ids:
             if report_id in reports:
                 self.logger.debug(f"Creating sheets for report '{report_id}'.")
