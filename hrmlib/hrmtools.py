@@ -2376,7 +2376,7 @@ class DevIntConnector:
     def build_group_summation_formula(self, report_row: dict, slot: dict, report: dict, cell_column: int):
         # self.logger.debug(f"Starting build_group_summation_formula for row '{report_row['name']}' with type '{report_row['type']}'.")
 
-        max_levels = report['structureDepth'] - report['numSaldoRows']
+        # max_levels = report['structureDepth'] - report['numSaldoRows']
         is_saldo_row = report_row['type'].lower() == "group" and len(
             report_row['hierarchyLocation']) == 0
 
@@ -2395,8 +2395,15 @@ class DevIntConnector:
         types = get_summation_type(report_row)
         its_an_item_group = 'children' in report_row and report_row['children'][0]['type'] in [
             'expense', 'income']
-        column_to_be_summed = slot['slotDetails']['startColumn'] + \
-            max_levels - 1 - (1 if is_saldo_row else 0)
+        # deleteme
+        # column_to_be_summed = slot['slotDetails']['startColumn'] + \
+        #     max_levels - 1 - (1 if is_saldo_row else 0)
+        if its_an_item_group:
+            # take last column in slot
+            column_to_be_summed = slot['slotDetails']['endColumn']
+        else:
+            # take next column if its a group or same column if its a saldo row
+            column_to_be_summed = cell_column + (0 if is_saldo_row else 1)
 
         # Determine the type of summation needed
         if len(types) == 1:
@@ -2448,15 +2455,20 @@ class DevIntConnector:
 
         # Handle budget group rows
         if report_row['type'] == 'group':
+            is_saldo_row = report_row['type'].lower() == "group" and len(
+                report_row['hierarchyLocation']) == 0
             level = len(report_row['hierarchyLocation'])
             font = self.settings.get(
                 f'depth{depth - level}Font', self.settings['depth5Font'])
             fill = self.settings.get(
                 f'level{level}Fill', self.settings['level0Fill'])
 
+            # deleteme
+            print("group", report_row['name'], "level", level, "depth", depth)
+
             # Set row title and format cells
             cell = sheet.cell(row=crow, column=col + level)
-            cell.value = report_row['name']
+            cell.value = report_row['name'] if not is_saldo_row else "Period Balance"
             cell.font = font
             cell.fill = fill
             # self.logger.debug(f"Set group title '{report_row['name']}' with font and fill at row {crow}, column {col + level}.")
@@ -2473,6 +2485,11 @@ class DevIntConnector:
                 end_column = slot['slotDetails']['endColumn']
                 cell_column = start_column + (level - 1 if level > 0 else 0)
                 cell = sheet.cell(row=crow, column=cell_column)
+
+                # deleteme
+                print("cell", cell_column, crow, "row type",
+                      report_row['type'], "slot type",
+                      slot['type'], "slot", start_column, end_column)
 
                 # Set value or formula based on slot type
                 if slot['type'] == 'budget' and 'limit' in slot:
@@ -2689,15 +2706,51 @@ class DevIntConnector:
         self.logger.debug(f"report keys: {report.keys()}")
 
         # # Populate each row in the report
+        first_col = 1
         for row in rows:
             self.fill_row_to_sheet(
-                report, row, sheet, bookings_sheet, first_col=1, depth=report_structure_levels)
+                report, row, sheet, bookings_sheet, first_col=first_col, depth=report_structure_levels)
             # self.logger.debug(f"Filled row {row['rowNumber']} for report '{report['name']}'.")
+
+        # Add a row for accumulated balance
+        last_row = rows[-1]
+        row_gap_for_accumulated_balance = 2
+        crow = last_row['rowNumber'] + row_gap_for_accumulated_balance
+        level = len(last_row['hierarchyLocation'])
+        font = self.settings.get(
+            f'depth{report_structure_levels - level}Font', self.settings['depth5Font'])
+        fill = self.settings.get(
+            f'level{level}Fill', self.settings['level0Fill'])
+        cell = sheet.cell(row=crow, column=first_col)
+        cell.value = "Accumulated Balance"
+        for i in range(level, report_structure_levels + 1 + report_structure_levels * len(last_row['slots'])):
+            cell = sheet.cell(row=crow, column=first_col + i)
+            cell.font = font
+            cell.fill = fill
+
+        today_date = pd.Timestamp(datetime.date.today())
+        last_slot = None
+        for slot in last_row['slots']:
+            cell = sheet.cell(
+                row=crow, column=slot['slotDetails']['startColumn'])
+            sheet.merge_cells(
+                start_row=crow, start_column=slot['slotDetails']['startColumn'], end_row=crow, end_column=slot['slotDetails']['endColumn'])
+            # cell.font = font
+            # cell.fill = fill
+            if slot['type'] == 'sum' and today_date >= slot['slotDetails']['start']:
+                cell.number_format = self.settings['euroFormat']
+                formula = ""
+                if last_slot:
+                    formula = f"${self._colchar(last_slot['slotDetails']['startColumn'])}{crow}+"
+                cell.value = f"={formula}{self._colchar(slot['slotDetails']['startColumn'])}${last_row['rowNumber']}"
+                last_slot = slot
 
         # Add borders around slots in the sheet
         for slot in report['slots']:
+            end_row = slot['endRow'] - report['numSaldoRows'] + \
+                row_gap_for_accumulated_balance
             self._set_border_to_area(sheet, slot['startColumn'], slot['startRow'],
-                                     slot['endColumn'], slot['endRow'] - report['numSaldoRows'])
+                                     slot['endColumn'], end_row)
             # self.logger.debug(f"Set border for slot starting at column {slot['startColumn']}, row {slot['startRow']}.")
         self.logger.debug(
             f"Completed filling report '{report['name']}' to sheet.")
@@ -3046,7 +3099,7 @@ class DevIntConnector:
         report_ids = list(instructions['reports'].keys())
 
         # deleteme
-        # report_ids = []
+        report_ids = ['P23']
         for report_id in report_ids:
             if report_id in reports:
                 self.logger.debug(f"Creating sheets for report '{report_id}'.")
