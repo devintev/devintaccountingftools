@@ -55,6 +55,7 @@ keep_personnel_columns:
   - realisation
 
 skr49_payroll_clearing_accounts:
+  '703' : 'Forderung and KK nach AAG'
   '1730' : 'Lohn- und Gehaltsverrechnung'
   '1731' : 'Lohn- und Gehaltsverrechnung nach § 11 Abs. 2 S. 2 EStG für § 4 Abs. 3 EStG'
   '1732' : 'Verbindlichkeiten im Rahmen der sozialen Sicherheit für § 4 Abs. 3 EStG'
@@ -65,6 +66,7 @@ skr49_payroll_liabilities_accounts:
   '1712' : 'Verbindlichkeiten aus Lohn und Gehalt'
 
 skr49_personnel_expenses_non_profit:
+  '2400' : 'Sonstige Einnahmen'
   '2550' : 'Anteilige Personalkosten'
   '2551' : 'Löhne und Gehälter'
   '2552' : 'Ehrenamtspauschale'

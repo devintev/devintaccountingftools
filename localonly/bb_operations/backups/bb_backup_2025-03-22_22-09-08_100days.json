@@ -1,0 +1,80 @@
+{
+  "metadata": {
+    "backup_date": "2025-03-22 22:09:08",
+    "date_range": {
+      "from": "2024-12-12",
+      "to": "2025-03-22"
+    },
+    "days_backup": 100,
+    "backup_include": {
+      "transactions": false,
+      "postings": false,
+      "receipts": true
+    },
+    "notes": "Some data may be missing if API endpoints were unavailable",
+    "api_status": {
+      "transactions": {
+        "success": false,
+        "message": "Transactions backup disabled"
+      },
+      "postings": {
+        "success": false,
+        "message": "Postings backup disabled"
+      },
+      "receipts_inbound": {
+        "success": true,
+        "count": 0,
+        "note": "Client-side date filtering was applied",
+        "diagnostics": true,
+        "diagnostics_count": 10
+      },
+      "receipts_outbound": {
+        "success": true,
+        "count": 2,
+        "types": {
+          "unknown": 2
+        },
+        "note": "Client-side date filtering was applied"
+      }
+    }
+  },
+  "transactions": [],
+  "postings": [],
+  "receipts": {
+    "inbound": [],
+    "outbound": [
+      {
+        "filename": "Invoice2025021WCCfromDevIntticketswa_2",
+        "id_by_customer": "1117",
+        "date": "2025-02-27",
+        "delivery_date": null,
+        "counterparty": "World Council of Churches",
+        "invoicenumber": "2025021",
+        "amount": "234.30",
+        "payment_date": "2025-03-10",
+        "due_date": null,
+        "account": "940",
+        "amount_paid": "0.00",
+        "amount_paid_fixed": "0.00",
+        "deleted": "0",
+        "link_to_receipt_id_by_customer": null
+      },
+      {
+        "filename": "Invoice2025022BftWfromDevInttickets",
+        "id_by_customer": "1151",
+        "date": "2025-03-12",
+        "delivery_date": null,
+        "counterparty": "Protestant Agency for Diakonie and",
+        "invoicenumber": "2025022",
+        "amount": "1852.76",
+        "payment_date": null,
+        "due_date": null,
+        "account": null,
+        "amount_paid": "0.00",
+        "amount_paid_fixed": "0.00",
+        "deleted": "0",
+        "link_to_receipt_id_by_customer": null
+      }
+    ]
+  }
+}

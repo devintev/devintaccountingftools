@@ -1,0 +1,15 @@
+{
+    "days_backup": 100,
+    "debug_mode": false,
+    "receipts_enhanced_logging": false,
+    "backup_include": {
+        "transactions": false,
+        "postings": false,
+        "receipts": true
+    },
+    "printout_include": {
+        "transactions": false,
+        "postings": false,
+        "receipts": true
+    }
+}

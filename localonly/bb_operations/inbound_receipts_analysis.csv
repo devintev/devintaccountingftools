@@ -1,0 +1,6 @@
+id_by_customer,filename,date,counterparty,invoicenumber,amount,year,month
+35,REchnung,2022-05-30,DB,22053099…,300.00,2022,5
+33,Rechnung,2022-05-30,DB,22052798…,300.00,2022,5
+34,invoice…,2022-05-30,Brainst…,9550382,682.91,2022,5
+32,Grover,2022-05-30,Grover,DE-19052…,44.85,2022,5
+31,DN_416-…,2022-05-30,DevInt,416-600-…,-20000.…,2022,5
