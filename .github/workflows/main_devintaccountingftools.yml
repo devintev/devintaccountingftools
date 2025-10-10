@@ -40,7 +40,7 @@ jobs:
       # Optional: Add step to run tests here
 
       - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
+        run: zip release.zip ./* -r -x "venv/*"
 
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
@@ -82,4 +82,12 @@ jobs:
           app-name: 'devintaccountingftools'
           slot-name: 'Production'
           package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          
+          remote-build: true
+
+      - name: 'Configure Python Runtime for Flex Consumption'
+        run: |
+          az functionapp update \
+            --name devintaccountingftools \
+            --resource-group devintaccountingftools \
+            --set "functionAppConfig.runtime.name=python" \
+                 "functionAppConfig.runtime.version=${{ env.PYTHON_VERSION }}"
