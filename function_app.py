@@ -47,7 +47,7 @@ def test(req: func.HttpRequest) -> func.HttpResponse:
     replace_data = {
         "help_info": "",
         "messages": "",
-        "main_content": "<h1>Called Function</h1>",
+        "main_content": "<h1>Called Azure Function</h1>",
         "log_level_num": "info",
     }
     dc = DevIntConnector(parent_logger=logger,
@@ -148,7 +148,7 @@ def reportrequest(req: func.HttpRequest) -> func.HttpResponse:
     replace_data = {
         "help_info": "",
         "messages": "",
-        "main_content": "<h1>Called Function</h1>",
+        "main_content": "<h1>Called Azure Function</h1>",
         "log_level_num": "info",
     }
     dc = DevIntConnector(parent_logger=logger,
